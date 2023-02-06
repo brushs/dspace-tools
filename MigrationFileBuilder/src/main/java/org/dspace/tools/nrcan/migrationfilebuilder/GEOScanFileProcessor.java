@@ -13,10 +13,8 @@ import org.apache.commons.lang3.StringUtils;
 
 public class GEOScanFileProcessor implements MetadataFileProcessor {
 
-	//private PrintStream outputStream;
 	private FileInputStream inputStream;
 	private BufferedReader streamReader;
-	private GEOScanDataProcessor unitedToteFilter;
 	private String inPath;
 	private String outPath;
 	private int itemCount = 0;
@@ -24,18 +22,21 @@ public class GEOScanFileProcessor implements MetadataFileProcessor {
 	private int archiveSize = 5;
 	private String currentArchivePath;
 	private String currentItemPath;
+	private boolean filesOpen = false;
+	private PrintStream contentsFileStream;
+	private PrintStream relationshipsFileStream;
+	private PrintStream dublinCoreFileStream;
+	private PrintStream dspaceFileStream;
+	private PrintStream nrcanFileStream;
 
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
 		this.outPath = outPath;
-		
-		unitedToteFilter = new GEOScanDataProcessor(cmd);	
 	}
 	
 	public void process() {
 		try {
 			inputStream = new FileInputStream(inPath);
-			//outputStream = getPrintStream(outPath);
 			streamReader = new BufferedReader(new InputStreamReader(inputStream));
 	
 			String line = streamReader.readLine();
@@ -58,7 +59,11 @@ public class GEOScanFileProcessor implements MetadataFileProcessor {
 		try {
 			streamReader.close();
 			inputStream.close();
-			//outputStream.close();
+			
+			if (filesOpen) {
+				closeOutputFiles();
+			}
+			
 		}
 		catch(IOException ex) {
 			throw new RuntimeException(ex.getMessage(), ex);
@@ -84,11 +89,14 @@ public class GEOScanFileProcessor implements MetadataFileProcessor {
 			String path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
 			//System.out.println("PATH: " + path);
 			createDirectory(path);
+			openNewOutputFiles(path);
+			filesOpen = true;
 		}
-
-//		if(success) {
-//			outputStream.println(input);
-//		}
+		
+		if (StringUtils.trim(input).equals("</item>")) {
+			closeOutputFiles();
+			filesOpen = false;
+		}
 	}
 
 	private void createDirectory(String path) {
@@ -96,5 +104,29 @@ public class GEOScanFileProcessor implements MetadataFileProcessor {
 		if (!theDir.exists()){
 		    theDir.mkdirs();
 		}
+	}
+	
+	private void openNewOutputFiles(String path) {
+		contentsFileStream = getPrintStream(path + "\\contents");
+		relationshipsFileStream = getPrintStream(path + "\\relationships");
+		dublinCoreFileStream = getPrintStream(path + "\\dublin_core.xml");
+		dspaceFileStream = getPrintStream(path + "\\metadata_dspace.xml");
+		nrcanFileStream = getPrintStream(path + "\\metadata_nrcan.xml");
+		
+		initializeDSpaceFile();
+	}
+	
+	private void closeOutputFiles() {
+		contentsFileStream.close();
+		relationshipsFileStream.close();
+		dublinCoreFileStream.close();
+		dspaceFileStream.close();
+		nrcanFileStream.close();
+	}
+	
+	private void initializeDSpaceFile() {
+		dspaceFileStream.println("<dublin_core schema=\"dspace\">");
+		dspaceFileStream.println("<dcvalue element=\"entity\" qualifier=\"type\">Publication</dcvalue>");
+		dspaceFileStream.println("</dublin_core>");
 	}
 }
