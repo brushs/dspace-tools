@@ -1,4 +1,4 @@
-package org.dspace.tools.nrcan.migrationfilebuilder;
+package org.dspace.tools.nrcan.migration.filebuilder;
 
 public class Relationship {
 

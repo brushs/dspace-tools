@@ -1,4 +1,4 @@
-package org.dspace.tools.nrcan.migrationfilebuilder;
+package org.dspace.tools.nrcan.migration.filebuilder;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -12,8 +12,9 @@ import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.lang3.StringUtils;
+import org.dspace.tools.nrcan.FileProcessor;
 
-public class GEOScanFileProcessor implements MetadataFileProcessor {
+public class GEOScanFileProcessor implements FileProcessor {
 
 	private FileInputStream inputStream;
 	private BufferedReader streamReader;

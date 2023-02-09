@@ -1,4 +1,4 @@
-package org.dspace.tools.nrcan.migrationfilebuilder;
+package org.dspace.tools.nrcan.migration.filebuilder;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -10,6 +10,7 @@ import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
+import org.dspace.tools.nrcan.FileProcessor;
 
 public final class MigrationFileBuilder {
 	private final static char OPT_INPUT_FILE = 'f';
@@ -37,8 +38,7 @@ public final class MigrationFileBuilder {
 		String inPath = cmd.getOptionValue(OPT_INPUT_FILE);
 		String outPath = cmd.getOptionValue(OPT_OUTPUT_FILE);
 
-		// Only option for United Tote is to refine file based on search criteria
-		MetadataFileProcessor processor = new GEOScanFileProcessor(inPath, outPath, cmd);
+		FileProcessor processor = new GEOScanFileProcessor(inPath, outPath, cmd);
 		
 		try {
 			processor.process();
@@ -66,7 +66,6 @@ public final class MigrationFileBuilder {
 				.hasArg()
 				.create(OPT_OUTPUT_FILE));
 
-		//GEOScanDataProcessor.appendClioptions(options);
 		return options;
 	}
 }

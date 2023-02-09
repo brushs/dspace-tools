@@ -1,8 +1,8 @@
-package org.dspace.tools.nrcan.migrationfilebuilder;
+package org.dspace.tools.nrcan;
 
 import java.io.IOException;
 
-public interface MetadataFileProcessor {
+public interface FileProcessor {
 	public void process() throws IOException;
 	
 	public void close();
