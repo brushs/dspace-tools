@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.lang3.StringUtils;
@@ -35,18 +37,30 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Map<String, String> dcElementTemplates;
 	private Map<String, String> nrcanElementTemplates;
 	private Map<String, Relationship> relationshipElements;
+	private Set<String> unknownElements = new HashSet<String>();
 
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
+	private static final String QUALIFIER = "##QUAL##";
 	
 	private static final String ELEMENT_CONTENT = "dc:content";
-	private static final String ELEMENT_TITLE = "dc:titlea";
+	private static final String ELEMENT_TITLE = "dc:titlem";
+	private static final String ELEMENT_TITLE_ALT = "dc:titlea";
 	private static final String ELEMENT_VOLUME = "volume";
+	private static final String ELEMENT_ISSUE = "issue";
+	private static final String ELEMENT_OPENACCESS = "openaccess";
 	private static final String ELEMENT_SERIAL = "serialtitle";
 	private static final String ELEMENT_AUTHOR = "dc:creator";
+	private static final String ELEMENT_IDENTIFIER = "dc:identifier";
+	private static final String ELEMENT_PUBLISHER = "dc:publisher";
+	private static final String ELEMENT_CORP_AUTHOR = "corpcreator";
+	private static final String ELEMENT_CONTRIBUTOR = "dc:contributor";
+	private static final String ELEMENT_LANGUAGE = "dc:language";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_AUTHOR = "isAuthorOfPublication";
+	private static final String RELATIONSHIP_PUBLISHER = "isPublisherOfPublication";
+	private static final String RELATIONSHIP_CORP_AUTHOR = "isCorporateAuthorOfPublication";
 	
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
@@ -64,11 +78,30 @@ public class GEOScanFileProcessor implements FileProcessor {
 			streamReader = new BufferedReader(new InputStreamReader(inputStream));
 	
 			String line = streamReader.readLine();
-	
+			String nextLine;
+			
 			while(line != null) {
-				processLine(line);
-				line = streamReader.readLine();
+				nextLine = streamReader.readLine();
+				if (nextLine == null) {
+					processLine(line);
+				} else {
+					if (nextLine.startsWith("<")) {
+						processLine(line);
+					} else {
+						while (nextLine != null && !nextLine.startsWith("<")) {
+							line = line + nextLine;
+							nextLine = streamReader.readLine();
+						}
+						processLine(line);
+					}
+				}
+				line = nextLine;
 			}
+			
+			for (String element : unknownElements) {
+				System.out.println("UNKNOWN ELEMENT: " + element);
+			}
+			
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -103,37 +136,41 @@ public class GEOScanFileProcessor implements FileProcessor {
 	}
 	
 	public void processLine(String input) {
-		if (StringUtils.isEmpty(input.trim())) {
-			return;
-		}
-		
-		if (StringUtils.trim(input).equals("<item>")) {
-			if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
-				currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
-				itemCount = 0;
+		try {		
+			if (StringUtils.isEmpty(input.trim())) {
+				return;
 			}
 			
-			currentItemPath = "item_" + String.format("%03d" , itemCount++);
+			if (StringUtils.trim(input).equals("<item>")) {
+				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
+					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
+					itemCount = 0;
+				}
+				
+				currentItemPath = "item_" + String.format("%03d" , itemCount++);
+				
+				String path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
+				//System.out.println("PATH: " + path);
+				
+				createDirectory(path);
+				openNewOutputFiles(path);
+				filesOpen = true;
+				beforeFirstItem = false;
+				return;
+			}
 			
-			String path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
-			//System.out.println("PATH: " + path);
+			if (StringUtils.trim(input).substring(0, Math.min(7, input.length())).equals("</item>")) {
+				closeOutputFiles();
+				filesOpen = false;
+				return;
+			}
 			
-			createDirectory(path);
-			openNewOutputFiles(path);
-			filesOpen = true;
-			beforeFirstItem = false;
-			return;
+			if (!beforeFirstItem) {
+				processMetadata(input);
+			}	
+		} catch (Exception e) {
+			throw e;
 		}
-		
-		if (StringUtils.trim(input).substring(0, Math.min(7, input.length())).equals("</item>")) {
-			closeOutputFiles();
-			filesOpen = false;
-			return;
-		}
-		
-		if (!beforeFirstItem) {
-			processMetadata(input);
-		}	
 	}
 
 	private void processMetadata(String line) {
@@ -166,20 +203,41 @@ public class GEOScanFileProcessor implements FileProcessor {
 		}
 		
 		if (StringUtils.isEmpty(template)) {
-			System.out.println("UNKNOWN ELEMENT: " + element);
+			unknownElements.add(element);
 			return;
 		}
 		
 		String value = "";
 		String language = "";
+		String qualifier = "";
 		
 		switch (element) {
 			case ELEMENT_TITLE :
 				value = getElementGeneric(line);
 				language = getElementLanguageGeneric(line);
 				break;
+			case ELEMENT_TITLE_ALT :
+				value = getElementGeneric(line);
+				language = getElementLanguageGeneric(line);
+				break;
 			case ELEMENT_VOLUME :
 				value = getElementGeneric(line);
+				break;
+			case ELEMENT_ISSUE :
+				value = getElementGeneric(line);
+				break;
+			case ELEMENT_OPENACCESS :
+				value = getElementOpenAccess(line);
+				break;
+			case ELEMENT_IDENTIFIER :
+				value = getElementIdentifier(line);
+				qualifier = getElementIdentifierQualifier(line);
+				break;
+			case ELEMENT_CONTRIBUTOR :
+				value = getElementGeneric(line);
+				break;
+			case ELEMENT_LANGUAGE :
+				value = getElementLanguage(line);
 				break;
 			default :
 				//
@@ -187,6 +245,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		
 		template = template.replace(VALUE, value);
 		template = template.replace(LANGUAGE, language);
+		template = template.replace(QUALIFIER, qualifier);
 		
 		if (isDCElement) {
 			dublinCoreFileStream.println(template);
@@ -210,6 +269,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 		String value = "";
 		switch (element) {
 		case ELEMENT_SERIAL :
+			value = getElementGeneric(line);
+			break;
+		case ELEMENT_PUBLISHER :
 			value = getElementGeneric(line);
 			break;
 		case ELEMENT_AUTHOR :
@@ -281,17 +343,24 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private void initializeElementTemplates() {
 		dcElementTemplates = new HashMap<String, String>();
 		
-		//dcElementTemplates.put(ELEMENT_TITLE, "<dcvalue element=\"title\" qualifier=\"alternative\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_TITLE_ALT, "<dcvalue element=\"title\" qualifier=\"alternative\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_TITLE, "<dcvalue element=\"title\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_IDENTIFIER, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		
 		nrcanElementTemplates = new HashMap<String, String>();
 		
 		nrcanElementTemplates.put(ELEMENT_VOLUME, "<dcvalue element=\"volume\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ISSUE, "<dcvalue element=\"issue\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_OPENACCESS, "<dcvalue element=\"openaccess\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CONTRIBUTOR, "<dcvalue element=\"sourcesystem\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		
 		relationshipElements = new HashMap<String, Relationship>();
 		
 		relationshipElements.put(ELEMENT_SERIAL, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_AUTHOR, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_TITLE));
 		
 	}
 	
@@ -302,6 +371,31 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String getElementLanguageGeneric(String line) {
 		int pos = line.indexOf("xml:lang");
 		return line.substring(pos + 10, pos + 12);
+	}
+	
+	private String getElementLanguage(String line) {
+		line = getElementGeneric(line).trim();
+		if (line.contentEquals("eng")) {
+			line = "en";
+		} else if (line.contentEquals("fre")) {
+			line = "fr";
+		}
+		return line;
+	}
+	
+	private String getElementIdentifier(String line) {
+		int pos = line.indexOf("/");
+		return line.substring(pos + 1, line.indexOf("</"));
+	}
+	
+	private String getElementIdentifierQualifier(String line) {
+		int pos = line.indexOf("info:");
+		return line.substring(pos + 5, line.indexOf("/"));
+	}
+	
+	private String getElementOpenAccess(String line) {
+		line = getElementGeneric(line).trim();
+		return line.substring(0, line.indexOf(" "));
 	}
 	
 	private String getAuthorMigrationId(String line) {
