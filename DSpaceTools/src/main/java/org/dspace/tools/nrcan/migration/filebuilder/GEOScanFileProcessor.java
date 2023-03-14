@@ -31,7 +31,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String outPath;
 	private int itemCount = 0;
 	private int archiveCount = 0;
-	private int archiveSize = 5;
+	private int archiveSize = 1000;
 	private String currentArchivePath;
 	private String currentItemPath;
 	private String bibLevel;
@@ -57,6 +57,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private int secSerialCount;
 	private int uniqueSecSerialCount;
 	private int secSerialNumberCount;
+	private String geoScanId;
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -159,6 +160,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_SEC_SERIAL_NUMBER3 = "secserialnumber3";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER4 = "secserialnumber4";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER5 = "secserialnumber5";
+	private static final String ELEMENT_FUNDING_LEGACY = "fundinglegacy";
+	private static final String ELEMENT_PROVINCE = "province";
+	private static final String ELEMENT_RELATION_ERRATUM = "dc:relationerratum";
+	private static final String ELEMENT_CLASSIFICATION = "classification";
+	private static final String ELEMENT_DURATION = "dc:duration";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -166,8 +172,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String RELATIONSHIP_MONOGRAPHIC_AUTHOR = "isMonographicAuthorOfPublication";
 	private static final String RELATIONSHIP_PUBLISHER = "isPublisherOfPublication";
 	private static final String RELATIONSHIP_CORP_AUTHOR = "isCorporateAuthorOfPublication";
-	private static final String RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR = "isMonographicCorporateAuthorOfPublication";
+	private static final String RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR = "isMonoCorpAuthorOfPublication";
 	private static final String RELATIONSHIP_COUNTRY = "isCountryOfPublication";
+	private static final String RELATIONSHIP_PROVINCE = "isProvinceOfPublication";
 	private static final String RELATIONSHIP_AREA = "isAreaOfPublication";
 	private static final String RELATIONSHIP_DIVISION = "isDivisionOfPublication";
 	private static final String RELATIONSHIP_SPONSOR = "isSponsorOfPublication";
@@ -177,6 +184,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_DIVISION_CODE = "nrcan.division.code";
 	private static final String ATTRIBUTE_SPONSOR_CODE = "nrcan.sponsor.code";
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
+	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -198,13 +206,23 @@ public class GEOScanFileProcessor implements FileProcessor {
 				if (nextLine == null) {
 					processLine(line);
 				} else {
-					if (nextLine.startsWith("<")) {
-						processLine(line);
-					} else {
+					if (!nextLine.startsWith("<")) {
 						while (nextLine != null && !nextLine.startsWith("<")) {
 							line = line + nextLine;
 							nextLine = streamReader.readLine();
 						}
+						if (nextLine != null && nextLine.startsWith("</")) {
+							line = line + nextLine;
+							nextLine = streamReader.readLine();
+						}
+						processLine(line);
+					} else if (nextLine.startsWith("</item>")) {
+						processLine(line);
+					} else if (nextLine.startsWith("</")) {
+						line = line + nextLine;
+						processLine(line);
+						nextLine = streamReader.readLine();
+					} else {
 						processLine(line);
 					}
 				}
@@ -267,6 +285,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				secSerialCount = 0;
 				uniqueSecSerialCount = 0;
 				secSerialNumberCount = 0;
+				geoScanId= "";
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
@@ -380,7 +399,10 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_IDENTIFIER :
 				value = getElementIdentifier(line);
-				qualifier = getElementIdentifierQualifier(line);
+				qualifier = getElementIdentifierQualifier(line).toLowerCase();
+				if (line.contains("GID")) {
+					geoScanId = value;
+				}
 				break;
 			case ELEMENT_CONTRIBUTOR :
 				value = getElementGeneric(line);
@@ -418,6 +440,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				language = "fr";
 				break;
 			case ELEMENT_NOTES :
+				line = line.replace("\n", " - ").replace("\r", " - ");
 				value = getElementGeneric(line);
 				break;
 			case ELEMENT_DOCTYPE :
@@ -535,7 +558,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 				value = getElementFundingCode(line);
 				if (value == null) {
 					value = getElementFundingLegacy(line);
+					if (value == null) {
+						return;
+					}				
 					language = getElementFundingLegacyLang(line);
+					element = ELEMENT_FUNDING_LEGACY;
 				} else {
 					return;
 				}
@@ -568,15 +595,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_DATE :
 				dateIssued = getElementGeneric(line);
 				return;
-			case ELEMENT_DATE_SUBMITTED :
-				if (StringUtils.isEmpty(dateIssued)) {
-					throw new Exception("No date issued");
-				}
-				
+			case ELEMENT_DATE_SUBMITTED :			
 				if (firstDateSubmitted) {
 					firstDateSubmitted = false;
 										
-					if (dateIssued.contentEquals(getElementGeneric(line).substring(0,4))) {
+					if (dateIssued != null && dateIssued.contentEquals(getElementGeneric(line).substring(0,4))) {
 						dateIssued = getElementGeneric(line);
 					}
 
@@ -605,9 +628,22 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_REPORT_NUMBER :
 				value = getElementGeneric(line);
 				break;
+			case ELEMENT_RELATION_ERRATUM :
+				value = getElementGeneric(line);
+				break;
+			case ELEMENT_CLASSIFICATION :
+				value = getElementGeneric(line);
+				break;
+			case ELEMENT_DURATION :
+				value = getElementGeneric(line);
+				break;
 			case ELEMENT_SEC_SERIAL_NUMBER :
 				value = getElementGeneric(line);
 				element = ELEMENT_SEC_SERIAL_NUMBER + secSerials.get(++secSerialNumberCount);
+				if (element.contentEquals("secserialnumbernull")) {
+					System.out.println("GID: " + geoScanId + " - Too many serials or no serial code");
+					return;
+				}
 				break;
 			default :
 				unknownElements.add(element);
@@ -630,6 +666,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			template = template.replace(VALUE, value);
 		} catch (Exception e) {
 			unknownElements.add(element);
+			if (element.contentEquals("fundinglegacy")) {
+				unknownElements.add(element);
+			}
 			return;
 		}
 		
@@ -639,7 +678,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		if (isDCElement) {
 			dublinCoreFileStream.println(template);
 		} else if (isGeospatialElement) {
-			nrcanFileStream.println(template);
+			geospatialFileStream.println(template);
 		} else {
 			nrcanFileStream.println(template);
 		}
@@ -678,6 +717,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 			break;
 		case ELEMENT_COUNTRY :
+			value = getElementGeneric(line);
+			break;
+		case ELEMENT_PROVINCE :
 			value = getElementGeneric(line);
 			break;
 		case ELEMENT_AREA :
@@ -834,7 +876,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_DOWNLOAD, "<dcvalue element=\"legacy\" qualifier=\"download\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_ARCHIVAL_FILE, "<dcvalue element=\"legacy\" qualifier=\"archivalfile\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_MAP, "<dcvalue element=\"map\" qualifier=\"\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_FUNDING, "<dcvalue element=\"legacy\" qualifier=\"sponsor\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_FUNDING_LEGACY, "<dcvalue element=\"legacy\" qualifier=\"sponsor\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_MEETING_NAME, "<dcvalue element=\"meeting\" qualifier=\"name\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_MEETING_CITY, "<dcvalue element=\"meeting\" qualifier=\"city\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_MEETING_COUNTRY, "<dcvalue element=\"meeting\" qualifier=\"country\">" + VALUE + "</dcvalue>");
@@ -860,6 +902,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_OPEN_ACCESS_TYPE, "<dcvalue element=\"legacy\" qualifier=\"openaccesstype\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_STATUS, "<dcvalue element=\"legacy\" qualifier=\"status\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_IMAGE, "<dcvalue element=\"legacy\" qualifier=\"thumbnail\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION_ERRATUM, "<dcvalue element=\"legacy\" qualifier=\"relationerratum\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CLASSIFICATION, "<dcvalue element=\"legacy\" qualifier=\"classification\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DURATION, "<dcvalue element=\"legacy\" qualifier=\"duration\">" + VALUE + "</dcvalue>");
 			
 		relationshipElements = new HashMap<String, Relationship>();
 		
@@ -870,6 +915,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
@@ -888,8 +934,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private void printDateIssued() throws Exception {
 		String template = dcElementTemplates.get(ELEMENT_DATE_ISSUED);
 		if (StringUtils.isEmpty(dateIssued)) {
-			//throw new Exception("Empty Date Issued");
-			System.out.println("No Date Issued");
+			System.out.println("GID: " + geoScanId + " - No Date Issued");
 		}
 		template = template.replace(VALUE, dateIssued);
 		
@@ -906,7 +951,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 	}
 	
 	private String getElementGeneric(String line) {
-		return line.substring(line.indexOf(">") + 1, line.substring(1).indexOf("<") + 1);
+		try {
+			return line.substring(line.indexOf(">") + 1, line.substring(1).indexOf("<") + 1);
+		} catch (Exception e) {
+			throw e;
+		}		
 	}
 	
 	@SuppressWarnings("deprecation")
@@ -1007,8 +1056,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 		int pos = line.indexOf("<general>");
 		String type = line.substring(pos + 8, line.indexOf("</general"));
 		pos = line.indexOf("<scale>");
-		String scale = line.substring(pos + 7, line.indexOf("</scale"));
-		return type + " - " + scale;
+		if (pos > 0) {
+			String scale = line.substring(pos + 7, line.indexOf("</scale"));
+			return type + " - " + scale;
+		}
+		return type;
 	}
 	
 	private String getElementFundingCode(String line) {
@@ -1021,32 +1073,40 @@ public class GEOScanFileProcessor implements FileProcessor {
 	}
 	
 	private String getElementFundingLegacy(String line) {
-		int pos = line.indexOf("Program En>");
-		String lang = "En";
-		if (pos < 0) {
-			pos = line.indexOf("Program Fr>");
-			lang = "Fr";
+		try {
+			if (line.contentEquals("<Funding></Funding>")) {
+				return null;
+			}
+			
+			int pos = line.indexOf("Program En>");
+			String lang = "En";
+			if (pos < 0) {
+				pos = line.indexOf("Program Fr>");
+				lang = "Fr";
+			}
+			String program = line.substring(pos + 10, line.indexOf("</Program " + lang));
+			
+			pos = line.indexOf("Project En>");
+			if (pos < 0) {
+				pos = line.indexOf("Project Fr>");
+			}
+			String project = "";
+			if (pos > 0) {
+				project = line.substring(pos + 10, line.indexOf("</Project " + lang));
+			}
+			
+			pos = line.indexOf("URL En>");
+			if (pos < 0) {
+				pos = line.indexOf("URL Fr>");
+			}
+			String url = "";
+			if (pos > 0) {
+				project = line.substring(pos + 10, line.indexOf("</URL " + lang));
+			}
+			return program + " - " + project + " - " + url;
+		} catch (Exception e) {
+			throw e;
 		}
-		String program = line.substring(pos + 10, line.indexOf("</Program " + lang));
-		
-		pos = line.indexOf("Project En>");
-		if (pos < 0) {
-			pos = line.indexOf("Project Fr>");
-		}
-		String project = "";
-		if (pos > 0) {
-			project = line.substring(pos + 10, line.indexOf("</Project " + lang));
-		}
-		
-		pos = line.indexOf("URL En>");
-		if (pos < 0) {
-			pos = line.indexOf("URL Fr>");
-		}
-		String url = "";
-		if (pos > 0) {
-			project = line.substring(pos + 10, line.indexOf("</URL " + lang));
-		}
-		return program + " - " + project + " - " + url;
 	}
 	
 	private String getElementFundingLegacyLang(String line) {
@@ -1128,53 +1188,80 @@ public class GEOScanFileProcessor implements FileProcessor {
 	      .collect(Collectors.toList());
 	}
 	
-	private void handleMeetingDate(String value) throws Exception {		
-
-		LocalDate startDate = null;
-		LocalDate endDate = null;
-		
-		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMMM d, uuuu");
-		
-		if (value.contains("-")) {
-			long spaceCount = value.chars().filter(ch -> ch == ' ').count();
-						
-			// July 8-12, 2002
-			if (spaceCount == 2) {
+	private void handleMeetingDate(String value) throws Exception {
+		try {	
+			LocalDate startDate = null;
+			LocalDate endDate = null;
+			
+			DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMMM d uuuu");
+			DateTimeFormatter formatter2 = DateTimeFormatter.ofPattern("MMMM d, uuuu");
+			
+			if (value.contains("-")) {
+				long spaceCount = value.chars().filter(ch -> ch == ' ').count();
+				value = value.replace(",", "");		
 				
-				String endDateString = value.substring(value.indexOf("-") + 1);
-				endDateString = value.substring(0, value.indexOf(" ")) + " " + endDateString;
-				endDate = LocalDate.parse(endDateString, formatter);
-				String startDateString = value.substring(0, value.indexOf("-")) + ", " + endDate.getYear();
-				startDate = LocalDate.parse(startDateString, formatter);
+				// July 8-12, 2002
+				if (spaceCount == 2) {
+					
+					String endDateString = value.substring(value.indexOf("-") + 1);
+					endDateString = value.substring(0, value.indexOf(" ")) + " " + endDateString;
+					endDate = LocalDate.parse(endDateString, formatter);
+					String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+					startDate = LocalDate.parse(startDateString, formatter);
+									
+				//April 29-May 11, 1974
+				} else if (spaceCount == 3) {
+				
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
+					String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+					startDate = LocalDate.parse(startDateString, formatter);				
+					
+				// Dec 28, 2011-Jan 2, 2012
+				} else if (spaceCount == 4) {
+					
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
+					startDate = LocalDate.parse(value.substring(0, value.indexOf("-")), formatter);
+					
+					
+				// September 28 - October 1, 1987
+				} else if (spaceCount == 5) {
+					
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1).trim(), formatter);
+					String startDateString = value.substring(0, value.indexOf("-")).trim() + " " + endDate.getYear();
+					startDate = LocalDate.parse(startDateString, formatter);				
 								
-			//April 29-May 11, 1974
-			} else if (spaceCount == 3) {
-			
-				endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
-				String startDateString = value.substring(0, value.indexOf("-")) + ", " + endDate.getYear();
-				startDate = LocalDate.parse(startDateString, formatter);				
+				} else {
+					throw new Exception("Unhandled date format: " + value);
+				}
 				
-			// Dec 28, 2011-Jan 2, 2012
-			} else if (spaceCount == 4) {
-				
-				endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
-				startDate = LocalDate.parse(value.substring(0, value.indexOf("-")), formatter);
-			
-			} else {
-				throw new Exception("Unhandled date format: " + value);
-			}
-		} else {
 			// May 19, 2020
-			startDate = LocalDate.parse(value, formatter);
-			endDate = startDate;
+			} else if (value.contains(",")) {
+				startDate = LocalDate.parse(value, formatter2);
+				endDate = startDate;
+			
+			// 1970
+			} else {
+				String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
+				template = template.replace(VALUE, value);
+				nrcanFileStream.println(template);
+				
+				template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
+				template = template.replace(VALUE, value);
+				nrcanFileStream.println(template);
+				
+				return;
+			}
+			
+			String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
+			template = template.replace(VALUE, startDate.format(DateTimeFormatter.ISO_DATE));
+			nrcanFileStream.println(template);
+			
+			template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
+			template = template.replace(VALUE, endDate.format(DateTimeFormatter.ISO_DATE));
+			nrcanFileStream.println(template);
+		
+		} catch (Exception e) {
+			System.out.println("GID: " + geoScanId + " - Meeting Date: " + value);
 		}
-		
-		String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
-		template = template.replace(VALUE, startDate.format(DateTimeFormatter.ISO_DATE));
-		nrcanFileStream.println(template);
-		
-		template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
-		template = template.replace(VALUE, endDate.format(DateTimeFormatter.ISO_DATE));
-		nrcanFileStream.println(template);
 	}
 }
