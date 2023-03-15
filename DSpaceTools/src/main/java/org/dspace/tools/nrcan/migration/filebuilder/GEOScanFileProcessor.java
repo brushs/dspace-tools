@@ -7,6 +7,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -19,6 +21,7 @@ import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
 import org.dspace.tools.nrcan.FileProcessor;
@@ -58,6 +61,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private int uniqueSecSerialCount;
 	private int secSerialNumberCount;
 	private String geoScanId;
+	private Set<String> existingFundingCodes = new HashSet<String>();
+	private Set<String> existingProvinceCodes = new HashSet<String>();
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -181,6 +186,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
+	private static final String ATTRIBUTE_PUB_MIGRATION_ID = "nrcan.publisher.migrationid";
 	private static final String ATTRIBUTE_DIVISION_CODE = "nrcan.division.code";
 	private static final String ATTRIBUTE_SPONSOR_CODE = "nrcan.sponsor.code";
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
@@ -211,7 +217,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 							line = line + nextLine;
 							nextLine = streamReader.readLine();
 						}
-						if (nextLine != null && nextLine.startsWith("</")) {
+						if (nextLine != null && nextLine.startsWith("</") && !nextLine.startsWith("</item")) {
 							line = line + nextLine;
 							nextLine = streamReader.readLine();
 						}
@@ -286,6 +292,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 				uniqueSecSerialCount = 0;
 				secSerialNumberCount = 0;
 				geoScanId= "";
+				existingFundingCodes = new HashSet<String>();
+				existingProvinceCodes = new HashSet<String>();
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
@@ -354,7 +362,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_TITLE_M :
 				value = getElementGeneric(line);
 				language = getElementLanguageGeneric(line);
-				if (bibLevel.contentEquals("M")) {
+				if (bibLevel.toLowerCase().contentEquals("m")) {
 					element = ELEMENT_TITLE_A;
 				}
 				break;
@@ -430,6 +438,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_ONLINE_URL :
 				value = getElementGeneric(line);
+				value = StringEscapeUtils.escapeXml(value);
 				break;
 			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_E :
 				value = getElementGeneric(line);
@@ -511,6 +520,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_IMAGE :
 				value = getElementGeneric(line);
+				value = StringEscapeUtils.escapeXml(value);
 				return;
 			case ELEMENT_SUBJECT_GEOSCAN :
 				value = getElementGeneric(line);
@@ -569,6 +579,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_MEETING_NAME :
 				value = getElementGeneric(line);
+				value = StringEscapeUtils.escapeXml(value);
 				break;
 			case ELEMENT_MEETING_DATE :
 				value = getElementGeneric(line);
@@ -691,7 +702,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 
 		String output = "-r -s 0 -f " + value;
 		
-		contentsFileStream.println(output);
+		//contentsFileStream.println(output);
 	}
 	
 	private void processRelationship(String element, String line) {
@@ -712,7 +723,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_AUTHOR_M :
 			value = getAuthorMigrationId(line);
-			if (bibLevel.contentEquals("M")) {
+			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_AUTHOR_A;
 			}
 			break;
@@ -721,6 +732,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_PROVINCE :
 			value = getElementGeneric(line);
+			if (existingProvinceCodes.contains(value)) {
+				return;
+			} else {
+				existingProvinceCodes.add(value);
+			}
 			break;
 		case ELEMENT_AREA :
 			value = getElementGeneric(line);
@@ -733,14 +749,16 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_CORP_AUTHOR_M :
 			value = getElementGeneric(line);
-			if (bibLevel.contentEquals("M")) {
+			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_CORP_AUTHOR_A;
 			}
 			break;
 		case ELEMENT_FUNDING :
 			value = getElementFundingCode(line);
-			if (value == null) {
+			if (value == null || existingFundingCodes.contains(value)) {
 				return;
+			} else {
+				existingFundingCodes.add(value);
 			}
 			break;
 		case ELEMENT_SEC_SERIAL_CODE :
@@ -911,9 +929,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_AUTHOR_A, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_AUTHOR, ATTRIBUTE_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_TITLE));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_TITLE));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_PUB_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_PUB_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_PUB_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_TITLE));
