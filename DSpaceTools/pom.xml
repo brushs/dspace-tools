@@ -2,8 +2,8 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.dspace.tools.nrcan</groupId>
-	<artifactId>MigrationFileBuilder</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<artifactId>MigrationTools</artifactId>
+	<version>1.0</version>
 
 	<properties>
 		<shell.version>2.0.0</shell.version>
@@ -14,11 +14,27 @@
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<source>1.6</source>
-					<target>1.6</target>
+					<source>1.8</source>
+					<target>1.8</target>
 					<verbose>true</verbose>
 				</configuration>
 			</plugin>
+			<plugin>
+		        <artifactId>maven-assembly-plugin</artifactId>
+		        <executions>
+		          <execution>
+		            <phase>package</phase>
+		            <goals>
+		              <goal>single</goal>
+		            </goals>
+		          </execution>
+		        </executions>
+		        <configuration>
+		          <descriptorRefs>
+		            <descriptorRef>jar-with-dependencies</descriptorRef>
+		          </descriptorRefs>
+		        </configuration>
+		    </plugin>
 		</plugins>
 	</build>
 
