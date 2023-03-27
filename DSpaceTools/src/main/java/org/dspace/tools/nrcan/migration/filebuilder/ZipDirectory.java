@@ -8,9 +8,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class ZipDirectory {
-    public static void main(String[] args) throws IOException {
-        String sourceFile = "zipTest";
-        FileOutputStream fos = new FileOutputStream("dirCompressed.zip");
+    public static void zipDirectory(String directoryName, String outputFilename) throws IOException {
+        String sourceFile = directoryName;
+        FileOutputStream fos = new FileOutputStream(outputFilename);
         ZipOutputStream zipOut = new ZipOutputStream(fos);
 
         File fileToZip = new File(sourceFile);

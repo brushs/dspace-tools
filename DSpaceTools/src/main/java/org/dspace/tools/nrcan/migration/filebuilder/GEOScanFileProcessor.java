@@ -35,7 +35,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String outPath;
 	private int itemCount = 0;
 	private int archiveCount = 0;
-	private int archiveSize = 1000;
+	private int archiveSize = 100;
 	private String currentArchivePath;
 	private String currentItemPath;
 	private String bibLevel;
@@ -254,6 +254,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 				line = nextLine;
 			}
 			
+			if (itemCount != archiveSize) {
+				String directory = outPath + "\\" + currentArchivePath + "\\";
+				String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
+				ZipDirectory.zipDirectory(directory, filename);			
+			}
+			
 			for (String element : unknownElements) {
 				System.out.println("UNKNOWN ELEMENT: " + element);
 			}
@@ -339,6 +345,13 @@ public class GEOScanFileProcessor implements FileProcessor {
 				printDateIssued();
 				closeOutputFiles();
 				filesOpen = false;
+				
+				if (itemCount == archiveSize) {
+					String directory = outPath + "\\" + currentArchivePath + "\\";
+					String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
+					ZipDirectory.zipDirectory(directory, filename);			
+				}
+				
 				return;
 			}
 			
