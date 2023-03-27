@@ -11,6 +11,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,6 +64,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String geoScanId;
 	private Set<String> existingFundingCodes = new HashSet<String>();
 	private Set<String> existingProvinceCodes = new HashSet<String>();
+	private Set<String> existingDivisionCodes = new HashSet<String>();
+	private Set<String> existingSecSerialCodes = new HashSet<String>();
+	private List<String> bBoxes = new ArrayList<String>();
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -170,6 +174,20 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_ERRATUM = "dc:relationerratum";
 	private static final String ELEMENT_CLASSIFICATION = "classification";
 	private static final String ELEMENT_DURATION = "dc:duration";
+	private static final String ELEMENT_BBOX = "bbox";
+	private static final String ELEMENT_RELATION_REPLACES = "replaces";
+	private static final String ELEMENT_RELATION_ACCOMPANIES = "accompanies";
+	private static final String ELEMENT_RELATION_ISREPLACEDBY = "isreplacedby";
+	private static final String ELEMENT_RELATION_ISRELATEDTO = "isrelatedto";
+	private static final String ELEMENT_RELATION_ISPARTOF = "ispartof";
+	private static final String ELEMENT_RELATION_ISACCOMPANIEDBY = "isaccompaniedby";
+	private static final String ELEMENT_RELATION_CONTAINS = "contains";
+	private static final String ELEMENT_RELATION_ISENLARGEDFROM = "isnenlargedfrom";
+	private static final String ELEMENT_RELATION_ISREDUCEDFROM = "isreducedfrom";
+	private static final String ELEMENT_RELATION_ISTRANSLATIONOF = "istranslationof";
+	private static final String ELEMENT_RELATION_ISREPRINTEDFROM = "isreprintedfrom";
+	private static final String ELEMENT_RELATION_ISREPRINTEDIN = "isreprintedin";
+	private static final String ELEMENT_RELATION_TBD = "tbd";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -187,6 +205,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
 	private static final String ATTRIBUTE_PUB_MIGRATION_ID = "nrcan.publisher.migrationid";
+	private static final String ATTRIBUTE_AREA_MIGRATION_ID = "nrcan.area.migrationid";
 	private static final String ATTRIBUTE_DIVISION_CODE = "nrcan.division.code";
 	private static final String ATTRIBUTE_SPONSOR_CODE = "nrcan.sponsor.code";
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
@@ -294,6 +313,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				geoScanId= "";
 				existingFundingCodes = new HashSet<String>();
 				existingProvinceCodes = new HashSet<String>();
+				existingDivisionCodes = new HashSet<String>();
+				existingSecSerialCodes = new HashSet<String>();
+				bBoxes = new ArrayList<String>();
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
@@ -313,6 +335,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 			
 			if (StringUtils.trim(input).substring(0, Math.min(7, input.length())).equals("</item>")) {
+				printBBox();
 				printDateIssued();
 				closeOutputFiles();
 				filesOpen = false;
@@ -457,7 +480,10 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_POLYGON_WENS :
 				value = getElementPolygonWENS(line);
-				break;
+				if (containsNumber(value)) {
+					bBoxes.add(value);
+				}		
+				return;
 			case ELEMENT_POLYGON_DEG :
 				value = getElementGeneric(line);
 				break;
@@ -497,20 +523,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_RELATION_REF :
 				value = getElementGeneric(line);
-				// Test to see if this contains a numeric value, otherwise junk
-				boolean containsNumber = false;
-				char[] ch = value.toCharArray();
-				for(char c : ch) {
-					if(Character.isDigit(c)){
-						containsNumber = true;
-						break;
-					}
-				}
-				if (containsNumber) {
-					break;
-				} else {
-					return;
-				}
+				element = getRelationElement(value);
+				value = "GID:" + value.substring(value.indexOf("-") + 1);
+				break;
 			case ELEMENT_BIBLIOGRAPHIC_LEVEL :
 				value = getElementGeneric(line);
 				bibLevel = value;
@@ -599,6 +614,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_RELATION_URL :
 				value = getElementRelationUrl(line);
+				value = StringEscapeUtils.escapeXml(value);
 				break;
 			case ELEMENT_ALTERNATE_FORMAT :
 				value = getElementGeneric(line);
@@ -732,6 +748,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_PROVINCE :
 			value = getElementGeneric(line);
+			if (value.contentEquals("can")) {
+				return;
+			}
 			if (existingProvinceCodes.contains(value)) {
 				return;
 			} else {
@@ -743,6 +762,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_DIVISION :
 			value = getElementDivision(line);
+			if (existingDivisionCodes.contains(value)) {
+				return;
+			} else {
+				existingDivisionCodes.add(value);
+			}
 			break;
 		case ELEMENT_CORP_AUTHOR_A :
 			value = getElementGeneric(line);
@@ -764,10 +788,13 @@ public class GEOScanFileProcessor implements FileProcessor {
 		case ELEMENT_SEC_SERIAL_CODE :
 			secSerialCount++;
 			value = getElementGeneric(line);
-			if (!secSerials.containsValue(value)) {
-				uniqueSecSerialCount++;
+			if (existingSecSerialCodes.size() == 0 || !existingSecSerialCodes.contains(value)) {
+				existingSecSerialCodes.add(value);
+				secSerials.put(secSerialCount, ++uniqueSecSerialCount);			
+			} else {
+				secSerials.put(secSerialCount, uniqueSecSerialCount);
+				return;
 			}
-			secSerials.put(secSerialCount, uniqueSecSerialCount);
 			break;
 		default :
 			//
@@ -856,6 +883,19 @@ public class GEOScanFileProcessor implements FileProcessor {
 		dcElementTemplates.put(ELEMENT_DATE_AVAILABLE, "<dcvalue element=\"date\" qualifier=\"available\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_DATE_UPDATED, "<dcvalue element=\"date\" qualifier=\"updated\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_DATE_SUBMITTED, "<dcvalue element=\"description\" qualifier=\"provenance\"  language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_REPLACES, "<dcvalue element=\"relation\" qualifier=\"replaces\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ACCOMPANIES, "<dcvalue element=\"relation\" qualifier=\"accompanies\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPLACEDBY, "<dcvalue element=\"relation\" qualifier=\"isreplacedby\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISRELATEDTO, "<dcvalue element=\"relation\" qualifier=\"isrelatedto\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISPARTOF, "<dcvalue element=\"relation\" qualifier=\"ispartof\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISACCOMPANIEDBY, "<dcvalue element=\"relation\" qualifier=\"isaccompaniedby\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_CONTAINS, "<dcvalue element=\"relation\" qualifier=\"contains\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISENLARGEDFROM, "<dcvalue element=\"relation\" qualifier=\"isenlargedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREDUCEDFROM, "<dcvalue element=\"relation\" qualifier=\"isreducedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISTRANSLATIONOF, "<dcvalue element=\"relation\" qualifier=\"istranslationof\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDFROM, "<dcvalue element=\"relation\" qualifier=\"isreprintedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDIN, "<dcvalue element=\"relation\" qualifier=\"isreprintedin\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_TBD, "<dcvalue element=\"relation\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		
 		nrcanElementTemplates = new HashMap<String, String>();
 		
@@ -923,7 +963,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_RELATION_ERRATUM, "<dcvalue element=\"legacy\" qualifier=\"relationerratum\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_CLASSIFICATION, "<dcvalue element=\"legacy\" qualifier=\"classification\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_DURATION, "<dcvalue element=\"legacy\" qualifier=\"duration\">" + VALUE + "</dcvalue>");
-			
+		nrcanElementTemplates.put(ELEMENT_POLYGON_WENS, "<dcvalue element=\"legacy\" qualifier=\"bbox\">" + VALUE + "</dcvalue>");
+					
 		relationshipElements = new HashMap<String, Relationship>();
 		
 		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
@@ -934,16 +975,16 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_PUB_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
-		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
-		geospatialElementTemplates.put(ELEMENT_POLYGON_WENS, "<dcvalue element=\"bbox\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");
 		geospatialElementTemplates.put(ELEMENT_COVERAGE, "<dcvalue element=\"polygon\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		geospatialElementTemplates.put(ELEMENT_BBOX, "<dcvalue element=\"bbox\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		
 		ignoredElements.add(ELEMENT_BIBLIOGRAPHIC_LEVEL);
 		
@@ -966,6 +1007,77 @@ public class GEOScanFileProcessor implements FileProcessor {
 			dublinCoreFileStream.println(template);
 		}
 		
+	}
+	
+	private void printBBox() {	
+		
+		if (bBoxes.size() > 0) {
+			String value = combineBBoxes();
+			
+			if (bBoxes.size() > 1) {
+				for (String val : bBoxes) {
+					String template = nrcanElementTemplates.get(ELEMENT_POLYGON_WENS);
+	
+					template = template.replace(VALUE, val);
+					
+					nrcanFileStream.println(template);
+				}
+			}
+			
+			String template = geospatialElementTemplates.get(ELEMENT_BBOX);
+
+			template = template.replace(VALUE, value);
+			
+			geospatialFileStream.println(template);
+		}
+				
+	}
+	
+	private String combineBBoxes() {
+		if (bBoxes.size() == 1) {
+			return bBoxes.get(0);
+		} else {
+			Float maxW = null;
+			Float maxE = null;
+			Float maxN = null;
+			Float maxS = null;
+			float bBoxW, bBoxE, bBoxN, bBoxS;
+			
+			for (String bBox : bBoxes) {
+				try {
+					bBox = bBox.substring(8);
+					bBox = bBox.replace("(", "");
+					bBox = bBox.replace(")", "");
+					
+					List<String> tokens = new ArrayList<String>();
+					StringTokenizer tokenizer = new StringTokenizer(bBox, ",");
+				    while (tokenizer.hasMoreElements()) {
+				        tokens.add(tokenizer.nextToken());
+				    }
+				    
+				    bBoxW = Float.parseFloat(tokens.get(0));
+				    bBoxE = Float.parseFloat(tokens.get(1));
+				    bBoxN = Float.parseFloat(tokens.get(2));
+				    bBoxS = Float.parseFloat(tokens.get(3));
+				    
+				    if (maxW == null || bBoxW < maxW) {
+				    	maxW = bBoxW;
+				    }
+				    if (maxE == null || bBoxE > maxE) {
+				    	maxE = bBoxE;
+				    }
+				    if (maxN == null || bBoxN > maxN) {
+				    	maxN = bBoxN;
+				    }
+				    if (maxS == null || bBoxS < maxS) {
+				    	maxS = bBoxS;
+				    }
+				} catch (Exception e) {
+					throw e;
+				}
+			}
+			return "ENVELOPE(" + maxW + ", " + maxE + ", " + maxN + ", " + maxS + ")";
+		}		
 	}
 	
 	private String getElementGeneric(String line) {
@@ -1067,7 +1179,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		String folder = line.substring(pos + 7, line.indexOf("</folder"));
 		pos = line.indexOf("<size>");
 		String size = line.substring(pos + 5, line.indexOf("</size"));
-		return folder + "-" + name + " - " + size;
+		return folder + " - " + name + " - " + size;
 	}
 	
 	private String getElementMap(String line) {
@@ -1206,6 +1318,56 @@ public class GEOScanFileProcessor implements FileProcessor {
 	      .collect(Collectors.toList());
 	}
 	
+	private String getRelationElement(String value) throws Exception {
+		Integer val = Integer.parseInt(value.substring(0, value.indexOf("-")));
+		String element = null;
+		switch (val) {
+			case 1 :
+				element = ELEMENT_RELATION_REPLACES;
+				break;
+			case 2 :
+				element = ELEMENT_RELATION_ACCOMPANIES;
+				break;
+			case 3 :
+				element = ELEMENT_RELATION_ISREPLACEDBY;
+				break;
+			case 4 :
+				element = ELEMENT_RELATION_ISRELATEDTO;
+				break;
+			case 5 :
+				element = ELEMENT_RELATION_ISPARTOF;
+				break;
+			case 6 :
+				element = ELEMENT_RELATION_ISACCOMPANIEDBY;
+				break;
+			case 7 :
+				element = ELEMENT_RELATION_CONTAINS;
+				break;
+			case 8 :
+				element = ELEMENT_RELATION_ISENLARGEDFROM;
+				break;
+			case 9 :
+				element = ELEMENT_RELATION_ISREDUCEDFROM;
+				break;
+			case 10 :
+				element = ELEMENT_RELATION_ISTRANSLATIONOF;
+				break;
+			case 11 :
+				element = ELEMENT_RELATION_ISREPRINTEDFROM;
+				break;
+			case 12 :
+				element = ELEMENT_RELATION_TBD;
+				break;
+			case 13 :
+				element = ELEMENT_RELATION_ISREPRINTEDIN;
+				break;
+			default :
+				throw new Exception("No match");
+		}
+		
+		return element;
+	}
+	
 	private void handleMeetingDate(String value) throws Exception {
 		try {	
 			LocalDate startDate = null;
@@ -1281,5 +1443,16 @@ public class GEOScanFileProcessor implements FileProcessor {
 		} catch (Exception e) {
 			System.out.println("GID: " + geoScanId + " - Meeting Date: " + value);
 		}
+	}
+	
+	private boolean containsNumber(String value) {
+		// Test to see if this contains a numeric value, otherwise junk
+		char[] ch = value.toCharArray();
+		for(char c : ch) {
+			if(Character.isDigit(c)){
+				return true;
+			}
+		}
+		return false;
 	}
 }
