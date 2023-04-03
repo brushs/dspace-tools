@@ -430,13 +430,13 @@ public class GEOScanFileProcessor implements FileProcessor {
 				value = getElementGeneric(line);
 				break;
 			case ELEMENT_DATE_RECORD_SENT :
-				value = getElementGeneric(line);
+				value = getElementDateRecordTouched(line);
 				break;
 			case ELEMENT_PREVIOUS_FILENAME :
 				value = getElementGeneric(line);
 				break;
 			case ELEMENT_RECORD_MODIFIED :
-				value = getElementGeneric(line);
+				value = getElementDateRecordTouched(line);
 				break;
 			case ELEMENT_ARCHIVAL_FILE :
 				value = getElementArchivalFile(line);
@@ -549,6 +549,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_IMAGE :
 				value = getElementGeneric(line);
 				value = StringEscapeUtils.escapeXml(value);
+				processThumbnail(element, line);
 				return;
 			case ELEMENT_SUBJECT_GEOSCAN :
 				value = getElementGeneric(line);
@@ -731,7 +732,20 @@ public class GEOScanFileProcessor implements FileProcessor {
 
 		String output = "-r -s 0 -f " + value;
 		
-		//contentsFileStream.println(output);
+		contentsFileStream.println(output);
+	}
+	
+	private void processThumbnail(String element, String line) {
+		
+		String value = getElementGeneric(line);
+		
+		value = "thumbnails" + value.substring(value.lastIndexOf("/"));
+
+		String output = "-r -s 0 -f " + value;
+		
+		output = output + "\tbundle:THUMBNAIL";
+		
+		contentsFileStream.println(output);
 	}
 	
 	private void processRelationship(String element, String line) {
@@ -1193,6 +1207,14 @@ public class GEOScanFileProcessor implements FileProcessor {
 		pos = line.indexOf("<size>");
 		String size = line.substring(pos + 5, line.indexOf("</size"));
 		return folder + " - " + name + " - " + size;
+	}
+	
+	private String getElementDateRecordTouched(String line) {
+		int pos = line.indexOf("<name>");
+		String name = line.substring(pos + 6, line.indexOf("</name"));
+		pos = line.indexOf("<date>");
+		String date = line.substring(pos + 6, line.indexOf("</date"));
+		return date + " - " + name;
 	}
 	
 	private String getElementMap(String line) {
