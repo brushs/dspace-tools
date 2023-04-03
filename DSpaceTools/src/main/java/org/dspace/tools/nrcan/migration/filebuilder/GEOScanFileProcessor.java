@@ -6,7 +6,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -294,11 +297,14 @@ public class GEOScanFileProcessor implements FileProcessor {
 		}
 	}
 	
-	private PrintStream getPrintStream(String filename) {
+	private PrintStream getPrintStream(String filename) throws UnsupportedEncodingException {
 		FileOutputStream fileOutputStream;
-		try {fileOutputStream = new FileOutputStream(filename);}
-		catch(IOException ex) {throw new RuntimeException(ex.getMessage(), ex);}
-		return new PrintStream(fileOutputStream);
+		try {
+			fileOutputStream = new FileOutputStream(filename);
+		} catch(IOException ex) {
+			throw new RuntimeException(ex.getMessage(), ex);
+		}
+		return new PrintStream(fileOutputStream, true, StandardCharsets.UTF_8.toString());
 	}
 	
 	public void processLine(String input) throws Exception {
@@ -397,6 +403,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_TITLE_M :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
 				if (bibLevel.toLowerCase().contentEquals("m")) {
 					element = ELEMENT_TITLE_A;
@@ -404,14 +411,17 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_TITLE_A :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
 				break;
 			case ELEMENT_ABSTRACT :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
 				break;
 			case ELEMENT_SUMMARY :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
 				break;
 			case ELEMENT_VOLUME :
@@ -478,10 +488,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_E :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "en";
 				break;
 			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_F :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "fr";
 				break;
 			case ELEMENT_NOTES :
@@ -508,18 +520,22 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_POLICY_IMPLICATION_E :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "en";
 				break;
 			case ELEMENT_POLICY_IMPLICATION_F :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "fr";
 				break;
 			case ELEMENT_POLICY_RELEVANCE_E :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "en";
 				break;
 			case ELEMENT_POLICY_RELEVANCE_F :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				language = "fr";
 				break;
 			case ELEMENT_GEOP_SURVEY :
@@ -608,6 +624,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_MEETING_NAME :
 				value = getElementGeneric(line);
+				value = replaceLTGT(value);
 				value = StringEscapeUtils.escapeXml(value);
 				break;
 			case ELEMENT_MEETING_DATE :
@@ -841,7 +858,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		}
 	}
 	
-	private void openNewOutputFiles(String path) {
+	private void openNewOutputFiles(String path) throws UnsupportedEncodingException {
 		contentsFileStream = getPrintStream(path + "\\contents");
 		relationshipsFileStream = getPrintStream(path + "\\relationships");
 		dublinCoreFileStream = getPrintStream(path + "\\dublin_core.xml");
@@ -1489,5 +1506,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 		}
 		return false;
+	}
+	
+	private String replaceLTGT(String value) {
+		value = value.replace("&amp;lt;", "&lt;");
+		value = value.replace("&amp;gt;", "&gt;");
+		return value;
 	}
 }
