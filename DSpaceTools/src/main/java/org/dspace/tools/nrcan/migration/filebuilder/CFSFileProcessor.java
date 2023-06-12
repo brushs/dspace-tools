@@ -29,8 +29,18 @@ import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
 import org.dspace.tools.nrcan.FileProcessor;
+import org.dspace.tools.nrcan.migration.filebuilder.model.AuthorData;
+import org.dspace.tools.nrcan.migration.filebuilder.model.CFSFile;
+import org.dspace.tools.nrcan.migration.filebuilder.model.CFSItem;
 
-public class GEOScanFileProcessor implements FileProcessor {
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.pemistahl.lingua.api.Language;
+import com.github.pemistahl.lingua.api.LanguageDetector;
+import com.github.pemistahl.lingua.api.LanguageDetectorBuilder;
+import static com.github.pemistahl.lingua.api.Language.*;
+
+public class CFSFileProcessor implements FileProcessor {
 
 	private FileInputStream inputStream;
 	private BufferedReader streamReader;
@@ -69,8 +79,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> existingProvinceCodes = new HashSet<String>();
 	private Set<String> existingDivisionCodes = new HashSet<String>();
 	private Set<String> existingSecSerialCodes = new HashSet<String>();
-	private Set<String> existingCountryCodes = new HashSet<String>();
-	private Set<String> existingAuthorCodes = new HashSet<String>();
 	private List<String> bBoxes = new ArrayList<String>();
 	
 	private static final String VALUE = "##VALUE##";
@@ -88,7 +96,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_OPEN_ACCESS = "openaccess";
 	private static final String ELEMENT_OPEN_ACCESS_TYPE = "openaccesstype";
 	private static final String ELEMENT_SERIAL_CODE = "serialcode";
-	private static final String ELEMENT_JOURNAL_CODE = "journalcode";
 	private static final String ELEMENT_AUTHOR_A = "dc:creatora";
 	private static final String ELEMENT_AUTHOR_M = "dc:creatorm";
 	private static final String ELEMENT_IDENTIFIER = "dc:identifier";
@@ -126,8 +133,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_DATE_RECORD_SENT = "daterecordsent";
 	private static final String ELEMENT_PREVIOUS_FILENAME = "previousfilename";
 	private static final String ELEMENT_COUNTRY = "country";
-	private static final String ELEMENT_AREA = "areaT";
-	private static final String ELEMENT_AREA_TEXT = "area";
+	private static final String ELEMENT_AREA = "area";
 	private static final String ELEMENT_DIVISION = "division";
 	private static final String ELEMENT_EDITION = "edition";
 	private static final String ELEMENT_RELATION_REF = "dc:relationref";
@@ -167,6 +173,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_DIGITAL = "digital";
 	private static final String ELEMENT_IS_OR_HAS_MAP = "isorhasmap";
 	private static final String ELEMENT_CONTAINS_MAP = "containsmap";
+	private static final String ELEMENT_REPORT_SERIAL_CODE = "reportserialcode";
 	private static final String ELEMENT_REPORT_NUMBER = "reportnumber";
 	private static final String ELEMENT_SEC_SERIAL_CODE = "secserialcode";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER = "secserialnumber";
@@ -194,9 +201,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_ISREPRINTEDFROM = "isreprintedfrom";
 	private static final String ELEMENT_RELATION_ISREPRINTEDIN = "isreprintedin";
 	private static final String ELEMENT_RELATION_TBD = "tbd";
+	private static final String ELEMENT_AUTHOR_CFS = "author";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
-	private static final String RELATIONSHIP_JOURNAL = "isJournalOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
 	private static final String RELATIONSHIP_AUTHOR = "isAuthorOfPublication";
 	private static final String RELATIONSHIP_MONOGRAPHIC_AUTHOR = "isMonographicAuthorOfPublication";
@@ -212,83 +219,52 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
 	private static final String ATTRIBUTE_PUB_MIGRATION_ID = "nrcan.publisher.migrationid";
-	private static final String ATTRIBUTE_CA_MIGRATION_ID = "nrcan.corpauthor.migrationid";
 	private static final String ATTRIBUTE_AREA_MIGRATION_ID = "nrcan.area.migrationid";
 	private static final String ATTRIBUTE_DIVISION_CODE = "nrcan.division.code";
 	private static final String ATTRIBUTE_SPONSOR_CODE = "nrcan.sponsor.code";
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
-	private static final String ATTRIBUTE_JOURNAL_CODE = "nrcan.journal.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
+	private static final String ATTRIBUTE_CFS_MIGRATION_ID = "nrcan.author.cfsmigrationid";
 	
-	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
+	public CFSFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
 		this.outPath = outPath;
 	}
 	
 	public void process() {
 		try {
+			CFSFile file = get(CFSFile.class, inPath);
+			
+			System.out.println(file.toString());
+			
 			initializeElementTemplates();
 			
-			inputStream = new FileInputStream(inPath);
-			streamReader = new BufferedReader(new InputStreamReader(inputStream));
-	
-			String line = streamReader.readLine();
-			String nextLine;
-			
-			while(line != null) {
-				nextLine = streamReader.readLine();
-				if (nextLine == null) {
-					processLine(line);
-				} else {
-					if (!nextLine.startsWith("<")) {
-						while (nextLine != null && !nextLine.startsWith("<")) {
-							line = line + nextLine;
-							nextLine = streamReader.readLine();
-						}
-						if (nextLine != null && nextLine.startsWith("</") && !nextLine.startsWith("</item")) {
-							line = line + nextLine;
-							nextLine = streamReader.readLine();
-						}
-						processLine(line);
-					} else if (nextLine.startsWith("</item>")) {
-						processLine(line);
-					} else if (nextLine.startsWith("</")) {
-						line = line + nextLine;
-						processLine(line);
-						nextLine = streamReader.readLine();
-					} else {
-						processLine(line);
-					}
-				}
-				line = nextLine;
+			for (CFSItem item : file.getData()) {
+				processItem(item);
 			}
-			
-			if (itemCount != archiveSize) {
-				String directory = outPath + "\\" + currentArchivePath + "\\";
-				String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
-				ZipDirectory.zipDirectory(directory, filename);			
-			}
-			
-			for (String element : unknownElements) {
-				System.out.println("UNKNOWN ELEMENT: " + element);
-			}
-			
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
 			throw new RuntimeException(ex.getMessage(), ex);
-		}
-		finally {
+		} finally {
 			close();
-		}		
+		}
+	}
+	
+	private <T> T get(Class<T> type, String inPath) {
+		ObjectMapper mapper = new ObjectMapper();
+	    try {
+			//return mapper.readValue(new File("C:\\Users\\steveb\\OneDrive - Apption\\Documents\\NRCan\\CFS\\test1.json"), type);
+	    	return mapper.readValue(new File(inPath), type);
+		} catch (IOException ex) {
+			System.out.println(ex);
+			throw new RuntimeException(ex.getMessage(), ex);
+		}
 	}
 	
 	@Override
 	public void close() {
-		try {
-			streamReader.close();
-			inputStream.close();
-			
+		try {			
 			if (filesOpen) {
 				closeOutputFiles();
 			}
@@ -298,7 +274,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 			
 		}
-		catch(IOException ex) {
+		catch(Exception ex) {
 			throw new RuntimeException(ex.getMessage(), ex);
 		}
 	}
@@ -313,30 +289,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 		return new PrintStream(fileOutputStream, true, StandardCharsets.UTF_8.toString());
 	}
 	
-	public void processLine(String input) throws Exception {
-		try {		
-			if (StringUtils.isEmpty(input.trim())) {
-				return;
-			}
-			
-			if (StringUtils.trim(input).equals("<item>")) {
-				bibLevel = "";
-				firstDateSubmitted = true;
-				dateIssued = "";
-				lastDateUpdated = "";
-				secSerials = new HashMap<Integer, Integer>();
-				secSerialCount = 0;
-				uniqueSecSerialCount = 0;
-				secSerialNumberCount = 0;
-				geoScanId= "";
-				existingFundingCodes = new HashSet<String>();
-				existingProvinceCodes = new HashSet<String>();
-				existingDivisionCodes = new HashSet<String>();
-				existingSecSerialCodes = new HashSet<String>();
-				existingCountryCodes = new HashSet<String>();
-				existingAuthorCodes = new HashSet<String>();
-				bBoxes = new ArrayList<String>();
-				
+	public void processItem(CFSItem input) throws Exception {
+		try {					
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
 					itemCount = 0;
@@ -349,42 +303,121 @@ public class GEOScanFileProcessor implements FileProcessor {
 				
 				createDirectory(path);
 				openNewOutputFiles(path);
-				filesOpen = true;
-				beforeFirstItem = false;
-				return;
-			}
-			
-			if (StringUtils.trim(input).substring(0, Math.min(7, input.length())).equals("</item>")) {
-				printBBox();
-				printDateIssued();
+
+				processMetadata(input);
+				
 				closeOutputFiles();
-				filesOpen = false;
 				
 				if (itemCount == archiveSize) {
 					String directory = outPath + "\\" + currentArchivePath + "\\";
 					String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
 					ZipDirectory.zipDirectory(directory, filename);			
 				}
-				
-				return;
-			}
 			
-			if (!beforeFirstItem) {
-				processMetadata(input);
-			}	
 		} catch (Exception e) {
 			throw e;
 		}
 	}
 
-	private void processMetadata(String line) throws Exception {
-		Integer indexOfGT = line.indexOf(">");
-		Integer indexOfSpace = line.indexOf(" ");
+	private void processMetadata(CFSItem input) throws Exception {
+
+		if (StringUtils.isEmpty(input.getUid())) {
+			throw new Exception("UUID should not be null");
+		} else {
+			//printElement();
+		}
 		
-		String element = line.substring(1, 
-				Math.min(indexOfGT < 0 ? line.length()-1 : indexOfGT, indexOfSpace < 0 ? line.length()-1 : indexOfSpace));
+		// Title
+		if (StringUtils.isEmpty(input.getTitle())) {
+			throw new Exception("Title should not be null");
+		} else {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TITLE_A), input.getTitle(), "en");
+		}
 		
-		processElement(element.toLowerCase(), line);
+		// Issue Date
+		if (StringUtils.isEmpty(input.getYear())) {
+			throw new Exception("Year should not be null");
+		} else {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_DATE_ISSUED), input.getYear(), null);
+		}
+		
+		// Authors
+		if (input.getAuthors() == null) {
+			throw new Exception("Authors should not be null");
+		} else {
+			for (AuthorData author : input.getAuthors().getData()) {
+				printRelationship(ELEMENT_AUTHOR_CFS, author.getUid());
+			}	
+		}
+		
+		// Abstract
+		if (!StringUtils.isEmpty(input.getItemAbstract().getEn())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_ABSTRACT), input.getItemAbstract().getEn(), "en");
+		}
+		if (!StringUtils.isEmpty(input.getItemAbstract().getFr())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_ABSTRACT), input.getItemAbstract().getFr(), "fr");
+		}
+		
+		// Plain Language Summary
+		if (!StringUtils.isEmpty(input.getPls().getEn())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_E), input.getPls().getEn(), "en");
+		}
+		if (!StringUtils.isEmpty(input.getPls().getFr())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F), input.getPls().getFr(), "fr");
+		}
+		
+		// Language
+		if (input.getLanguage().getEn().contentEquals("French")) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_LANGUAGE), "fr", null);
+		} else {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_LANGUAGE), "en", null);
+		}
+		
+		// DOI
+		if (!StringUtils.isEmpty(input.getDoi())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getDoi(), "doi", null);
+		}
+		
+		final LanguageDetector detector = LanguageDetectorBuilder.fromLanguages(ENGLISH, FRENCH).build();
+		final Language detectedLanguage = detector.detectLanguageOf("languages are awesome");
+		System.out.println(input.getType().getData().getName().getEn() + " - " + detector.detectLanguageOf(input.getType().getData().getName().getEn()));
+		System.out.println(input.getType().getData().getName().getFr() + " - " + detector.detectLanguageOf(input.getType().getData().getName().getFr()));
+		
+		if (input.getSeries().getData().getName().getEn() != null) {
+			System.out.println(input.getSeries().getData().getName().getEn() + " - " + detector.detectLanguageOf(input.getSeries().getData().getName().getEn()));
+			System.out.println(input.getSeries().getData().getName().getFr() + " - " + detector.detectLanguageOf(input.getSeries().getData().getName().getFr()));
+		}
+		
+		if (input.getCentre().getData().getName().getEn() != null) {
+			System.out.println(input.getCentre().getData().getName().getEn() + " - " + detector.detectLanguageOf(input.getCentre().getData().getName().getEn()));
+			System.out.println(input.getCentre().getData().getName().getFr() + " - " + detector.detectLanguageOf(input.getCentre().getData().getName().getFr()));
+		}
+	}
+	
+	private void printElement(PrintStream stream, String template, String value, String lang) {			
+		printElement(stream, template, value, null, lang);					
+	}
+	
+	private void printElement(PrintStream stream, String template, String value, String qualifier, String lang) {			
+		template = template.replace(VALUE, value);
+		
+		if (qualifier != null) {
+			template = template.replace(QUALIFIER, qualifier);
+		}
+		
+		if (lang != null) {
+			template = template.replace(LANGUAGE, lang);
+		}
+		
+		stream.println(template);					
+}
+	
+	private void printRelationship(String element, String value) {			
+		Relationship rel = relationshipElements.get(element);
+		
+		String output = "relationship." + rel.getName() + " " + rel.getAttribute() + ":" + value;
+		
+		relationshipsFileStream.println(output);				
 	}
 	
 	private void processElement(String element, String line) throws Exception {
@@ -507,12 +540,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_NOTES :
 				line = line.replace("\n", " - ").replace("\r", " - ");
 				value = getElementGeneric(line);
-				value = replaceAmp(value);
 				break;
 			case ELEMENT_DOCTYPE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_AREA_TEXT :
 				value = getElementGeneric(line);
 				break;
 			case ELEMENT_POLYGON_WENS :
@@ -759,10 +788,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 		
 		String value = getElementGeneric(line);
 
-		value = "STPublications_PublicationsST/" + value;
-		
-		value = value.replace("//","/");
-		
 		String output = "-r -s 0 -f " + value;
 		
 		contentsFileStream.println(output);
@@ -774,7 +799,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		
 		value = "thumbnails" + value.substring(value.lastIndexOf("/"));
 
-		String output = "-r -s 2 -f " + value;
+		String output = "-r -s 0 -f " + value;
 		
 		output = output + "\tbundle:THUMBNAIL";
 		
@@ -788,7 +813,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		case ELEMENT_SERIAL_CODE :
 			value = getElementGeneric(line);
 			break;
-		case ELEMENT_JOURNAL_CODE :
+		case ELEMENT_REPORT_SERIAL_CODE :
 			value = getElementGeneric(line);
 			break;
 		case ELEMENT_PUBLISHER :
@@ -799,25 +824,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_AUTHOR_M :
 			value = getAuthorMigrationId(line);
-			if (existingAuthorCodes.contains(value)) {
-				System.out.println("GID: " + geoScanId + " - Duplicate Authors?");
-				return;
-			} else {
-				existingAuthorCodes.add(value);
-			}
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_AUTHOR_A;
-			} else {
-				value = value;
 			}
 			break;
 		case ELEMENT_COUNTRY :
 			value = getElementGeneric(line);
-			if (existingCountryCodes.contains(value)) {
-				return;
-			} else {
-				existingCountryCodes.add(value);
-			}
 			break;
 		case ELEMENT_PROVINCE :
 			value = getElementGeneric(line);
@@ -843,11 +855,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_CORP_AUTHOR_A :
 			value = getElementGeneric(line);
-			value = value.replace("&amp;", "&");
 			break;
 		case ELEMENT_CORP_AUTHOR_M :
 			value = getElementGeneric(line);
-			value = value.replace("&amp;", "&");
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_CORP_AUTHOR_A;
 			}
@@ -984,7 +994,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_TOTAL_SHEETS, "<dcvalue element=\"pagination\" qualifier=\"totalsheets\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_FILE_TYPE, "<dcvalue element=\"filetype\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_MEDIA, "<dcvalue element=\"media\" qualifier=\"\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_AREA_TEXT, "<dcvalue element=\"area\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_LANGUAGE_ABSTRACT, "<dcvalue element=\"abstract\" qualifier=\"language\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_ONLINE_URL, "<dcvalue element=\"publication\" qualifier=\"externalurl\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_SUMMARY, "<dcvalue element=\"summary\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
@@ -1044,17 +1053,18 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements = new HashMap<String, Relationship>();
 		
 		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
-		relationshipElements.put(ELEMENT_JOURNAL_CODE, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_JOURNAL_CODE));
 		relationshipElements.put(ELEMENT_AUTHOR_A, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_AUTHOR, ATTRIBUTE_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_AUTHOR_CFS, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_CFS_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_PUB_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_PUB_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_PUB_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
+		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
@@ -1065,26 +1075,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		ignoredElements.add(ELEMENT_BIBLIOGRAPHIC_LEVEL);
 		
 	}
-	
-	private void printDateIssued() throws Exception {
-		String template = dcElementTemplates.get(ELEMENT_DATE_ISSUED);
-		if (StringUtils.isEmpty(dateIssued)) {
-			System.out.println("GID: " + geoScanId + " - No Date Issued");
-		}
-		template = template.replace(VALUE, dateIssued);
 		
-		dublinCoreFileStream.println(template);
-		
-		if (!StringUtils.isEmpty(lastDateUpdated)) {
-			template = dcElementTemplates.get(ELEMENT_DATE_UPDATED);
-
-			template = template.replace(VALUE, lastDateUpdated);
-			
-			dublinCoreFileStream.println(template);
-		}
-		
-	}
-	
 	private void printBBox() {	
 		
 		if (bBoxes.size() > 0) {
@@ -1160,8 +1151,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		try {
 			return line.substring(line.indexOf(">") + 1, line.substring(1).indexOf("<") + 1);
 		} catch (Exception e) {
-			System.out.println("GID: " + geoScanId + " - Line: " + line);
-			return "";
+			throw e;
 		}		
 	}
 	
@@ -1320,8 +1310,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 			return program + " - " + project + " - " + url;
 		} catch (Exception e) {
-			System.out.println("GID: " + geoScanId + " - FundingLegacy: " + line);
-			return null;
+			throw e;
 		}
 	}
 	
@@ -1357,42 +1346,36 @@ public class GEOScanFileProcessor implements FileProcessor {
 			String orcId = "";
 			try {
 				pos = line.indexOf("ORCID");
-				orcId = line.substring(pos + 45, line.indexOf("</ORCID"));
+				orcId = line.substring(pos + 44, line.indexOf("</ORCID"));
 			} catch (Exception e) {
 				//
 			}
-			return lastName.toUpperCase() + "_" + firstName + "_" + deptId + "_" + orcId;
+			return firstName + "_" + lastName + "_" + deptId + "_" + orcId;
 		} catch (Exception e) {
 			return null;
 		}		
 	}
 	
 	private void handleRelationPhotoElement(String line) {
-		try {
-			List<String> tokens = getTokensWithCollection(line);
-			for (String token : tokens) {
-				if (token.contains(":")) {
-					String start = token.substring(0, token.indexOf(":"));
-					String end = token.substring(token.indexOf(":") + 1);
-					
-					int startNum = Integer.parseInt(start.substring(start.indexOf("-") + 1));
-					int endNum = Integer.parseInt(end.substring(end.indexOf("-") + 1));
-					
-					String value = "";
-					for (int i=startNum;i<=endNum;i++) {
-						
-							value = start.substring(0, start.indexOf("-"));
-							value = value + "-" + i;
-							printRelationPhotoElement(value);
-						
-					}
-					
-				} else {
-					printRelationPhotoElement(token);
+		List<String> tokens = getTokensWithCollection(line);
+		for (String token : tokens) {
+			if (token.contains(":")) {
+				String start = token.substring(0, token.indexOf(":"));
+				String end = token.substring(token.indexOf(":") + 1);
+				
+				int startNum = Integer.parseInt(start.substring(start.indexOf("-") + 1));
+				int endNum = Integer.parseInt(end.substring(end.indexOf("-") + 1));
+				
+				String value = "";
+				for (int i=startNum;i<=endNum;i++) {
+					value = start.substring(0, start.indexOf("-"));
+					value = value + "-" + i;
+					printRelationPhotoElement(value);
 				}
+				
+			} else {
+				printRelationPhotoElement(token);
 			}
-		} catch (Exception e) {
-			System.out.println("GID: " + geoScanId + " - Relation Photo: " + line);
 		}
 	}
 	
@@ -1553,9 +1536,5 @@ public class GEOScanFileProcessor implements FileProcessor {
 		value = value.replace("&amp;gt;", "&gt;");
 		return value;
 	}
-	
-	private String replaceAmp(String value) {
-		value = value.replace(" & ","&amp;");
-		return value;
-	}
+
 }

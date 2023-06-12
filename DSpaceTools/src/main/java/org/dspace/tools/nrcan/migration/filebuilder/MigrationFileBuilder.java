@@ -10,11 +10,13 @@ import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
+import org.apache.commons.lang3.StringUtils;
 import org.dspace.tools.nrcan.FileProcessor;
 
 public final class MigrationFileBuilder {
 	private final static char OPT_INPUT_FILE = 'f';
 	private final static char OPT_OUTPUT_FILE = 'o';
+	private final static char OPT_TYPE = 't';
 	
 	public static final void main(String[] args) {
 		CommandLineParser parser = new PosixParser();
@@ -37,8 +39,14 @@ public final class MigrationFileBuilder {
 	private static void processFile(CommandLine cmd) {
 		String inPath = cmd.getOptionValue(OPT_INPUT_FILE);
 		String outPath = cmd.getOptionValue(OPT_OUTPUT_FILE);
+		String type = cmd.getOptionValue(OPT_TYPE);
 
-		FileProcessor processor = new GEOScanFileProcessor(inPath, outPath, cmd);
+		FileProcessor processor;
+		if (!StringUtils.isEmpty(type) && type.contentEquals("cfs")) {
+			processor = new CFSFileProcessor(inPath, outPath, cmd);
+		} else {
+			processor = new GEOScanFileProcessor(inPath, outPath, cmd);
+		}
 		
 		try {
 			processor.process();
@@ -65,6 +73,13 @@ public final class MigrationFileBuilder {
 				.withDescription("Output file (default, STDOUT)")
 				.hasArg()
 				.create(OPT_OUTPUT_FILE));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("type")
+				.withArgName("Type")
+				.withDescription("Type of migration (default, STDOUT)")
+				.hasArg()
+				.create(OPT_TYPE));
 
 		return options;
 	}

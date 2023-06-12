@@ -27,7 +27,7 @@ public class LogFileProcessor implements FileProcessor {
 		try {
 			inputStream = new FileInputStream(inPath);
 			outputStream = getPrintStream(outPath);
-			streamReader = new BufferedReader(new InputStreamReader(inputStream, "UTF-16"));
+			streamReader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
 	
 			String line = streamReader.readLine();
 	
