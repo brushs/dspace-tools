@@ -793,6 +793,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_PUBLISHER :
 			value = getElementGeneric(line);
+			value = value.toUpperCase();
 			break;
 		case ELEMENT_AUTHOR_A :
 			value = getAuthorMigrationId(line);
@@ -807,8 +808,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_AUTHOR_A;
-			} else {
-				value = value;
 			}
 			break;
 		case ELEMENT_COUNTRY :
@@ -1361,7 +1360,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			} catch (Exception e) {
 				//
 			}
-			return lastName.toUpperCase() + "_" + firstName + "_" + deptId + "_" + orcId;
+			return lastName.toUpperCase() + "_" + firstName.toUpperCase() + "_" + deptId + "_" + orcId;
 		} catch (Exception e) {
 			return null;
 		}		
