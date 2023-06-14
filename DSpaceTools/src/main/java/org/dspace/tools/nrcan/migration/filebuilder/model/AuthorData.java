@@ -15,5 +15,13 @@ public class AuthorData {
 	
 	@Getter
 	@Setter
+	String orcid;
+	
+	@Getter
+	@Setter
+	String nrn_userid;
+	
+	@Getter
+	@Setter
 	Link[] links;
 }

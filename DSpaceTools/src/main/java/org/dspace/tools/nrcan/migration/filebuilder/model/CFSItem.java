@@ -35,6 +35,26 @@ public class CFSItem {
 	
 	@Getter
 	@Setter
+	String issn;
+	
+	@Getter
+	@Setter
+	String isbn;
+	
+	@Getter
+	@Setter
+	String goc_fo_num;
+	
+	@Getter
+	@Setter
+	String fiscal_year;
+	
+	@Getter
+	@Setter
+	String release_date;
+	
+	@Getter
+	@Setter
 	Availability availability;
 	
 	@Getter

@@ -16,4 +16,8 @@ public class Availability {
 	@Getter
 	@Setter
 	String print;
+	
+	@Getter
+	@Setter
+	String epub;
 }

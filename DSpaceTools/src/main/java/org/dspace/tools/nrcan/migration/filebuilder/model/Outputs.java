@@ -7,5 +7,5 @@ public class Outputs {
 
 	@Getter
 	@Setter
-	Data[] data;
+	OutputData[] data;
 }

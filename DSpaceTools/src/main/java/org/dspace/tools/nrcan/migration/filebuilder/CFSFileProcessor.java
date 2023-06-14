@@ -1,20 +1,12 @@
 package org.dspace.tools.nrcan.migration.filebuilder;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,15 +17,15 @@ import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.cli.CommandLine;
-import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.text.WordUtils;
 import org.dspace.tools.nrcan.FileProcessor;
 import org.dspace.tools.nrcan.migration.filebuilder.model.AuthorData;
 import org.dspace.tools.nrcan.migration.filebuilder.model.CFSFile;
 import org.dspace.tools.nrcan.migration.filebuilder.model.CFSItem;
+import org.dspace.tools.nrcan.migration.filebuilder.model.ProgramData;
+import org.dspace.tools.nrcan.migration.filebuilder.model.ProgramDetailData;
+import org.dspace.tools.nrcan.migration.filebuilder.model.SubjectData;
 
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.pemistahl.lingua.api.Language;
 import com.github.pemistahl.lingua.api.LanguageDetector;
@@ -42,8 +34,6 @@ import static com.github.pemistahl.lingua.api.Language.*;
 
 public class CFSFileProcessor implements FileProcessor {
 
-	private FileInputStream inputStream;
-	private BufferedReader streamReader;
 	private String inPath;
 	private String outPath;
 	private int itemCount = 0;
@@ -51,9 +41,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private int archiveSize = 100;
 	private String currentArchivePath;
 	private String currentItemPath;
-	private String bibLevel;
 	private boolean filesOpen = false;
-	private boolean beforeFirstItem = true;
 	private PrintStream contentsFileStream;
 	private PrintStream relationshipsFileStream;
 	private PrintStream dublinCoreFileStream;
@@ -64,22 +52,10 @@ public class CFSFileProcessor implements FileProcessor {
 	private Map<String, String> nrcanElementTemplates;
 	private Map<String, String> geospatialElementTemplates;
 	private Map<String, Relationship> relationshipElements;
-	private Set<String> unknownElements = new HashSet<String>();
 	private Set<String> ignoredElements = new HashSet<String>();
 	private Set<String> valueSet = new HashSet<String>();
-	private boolean firstDateSubmitted = true;
-	private String dateIssued = "";
-	private String lastDateUpdated = "";
-	private Map<Integer, Integer> secSerials;
-	private int secSerialCount;
-	private int uniqueSecSerialCount;
-	private int secSerialNumberCount;
-	private String geoScanId;
-	private Set<String> existingFundingCodes = new HashSet<String>();
-	private Set<String> existingProvinceCodes = new HashSet<String>();
-	private Set<String> existingDivisionCodes = new HashSet<String>();
-	private Set<String> existingSecSerialCodes = new HashSet<String>();
-	private List<String> bBoxes = new ArrayList<String>();
+	
+	private final LanguageDetector detector = LanguageDetectorBuilder.fromLanguages(ENGLISH, FRENCH).build();
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -87,7 +63,6 @@ public class CFSFileProcessor implements FileProcessor {
 	
 	private static final String ELEMENT_TYPE = "dc:type";
 	private static final String ELEMENT_DOCTYPE = "doctype";
-	private static final String ELEMENT_CONTENT = "dc:content";
 	private static final String ELEMENT_TITLE_M = "dc:titlem";
 	private static final String ELEMENT_TITLE_A = "dc:titlea";
 	private static final String ELEMENT_VOLUME = "volume";
@@ -155,7 +130,6 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_MAP = "map";
 	private static final String ELEMENT_FUNDING = "funding";
 	private static final String ELEMENT_MEETING_NAME = "meetingname";
-	private static final String ELEMENT_MEETING_DATE = "meetingdate";
 	private static final String ELEMENT_MEETING_START = "meetingstart";
 	private static final String ELEMENT_MEETING_END = "meetingend";
 	private static final String ELEMENT_MEETING_CITY = "meetingcity";
@@ -165,7 +139,6 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_URL = "dc:relationurl";
 	private static final String ELEMENT_RELATION = "dc:relation";
 	private static final String ELEMENT_RELATION_PHOTO = "dc:relationphoto";
-	private static final String ELEMENT_DATE = "dc:date";
 	private static final String ELEMENT_DATE_SUBMITTED = "dc:datesubmitted";
 	private static final String ELEMENT_DATE_ISSUED = "dc:dateissued";
 	private static final String ELEMENT_DATE_AVAILABLE = "dc:dateavailable";
@@ -176,7 +149,6 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_REPORT_SERIAL_CODE = "reportserialcode";
 	private static final String ELEMENT_REPORT_NUMBER = "reportnumber";
 	private static final String ELEMENT_SEC_SERIAL_CODE = "secserialcode";
-	private static final String ELEMENT_SEC_SERIAL_NUMBER = "secserialnumber";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER1 = "secserialnumber1";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER2 = "secserialnumber2";
 	private static final String ELEMENT_SEC_SERIAL_NUMBER3 = "secserialnumber3";
@@ -202,6 +174,8 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_ISREPRINTEDIN = "isreprintedin";
 	private static final String ELEMENT_RELATION_TBD = "tbd";
 	private static final String ELEMENT_AUTHOR_CFS = "author";
+	private static final String ELEMENT_SERIAL_CFS = "serial";
+	private static final String ELEMENT_FUNDING_CFS = "funding";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -232,7 +206,7 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 	
 	public void process() {
-		try {
+		try {		
 			CFSFile file = get(CFSFile.class, inPath);
 			
 			System.out.println(file.toString());
@@ -291,28 +265,28 @@ public class CFSFileProcessor implements FileProcessor {
 	
 	public void processItem(CFSItem input) throws Exception {
 		try {					
-				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
-					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
-					itemCount = 0;
-				}
-				
-				currentItemPath = "item_" + String.format("%03d" , itemCount++);
-				
-				String path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
-				//System.out.println("PATH: " + path);
-				
-				createDirectory(path);
-				openNewOutputFiles(path);
+			if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
+				currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
+				itemCount = 0;
+			}
+			
+			currentItemPath = "item_" + String.format("%03d" , itemCount++);
+			
+			String path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
+			//System.out.println("PATH: " + path);
+			
+			createDirectory(path);
+			openNewOutputFiles(path);
 
-				processMetadata(input);
-				
-				closeOutputFiles();
-				
-				if (itemCount == archiveSize) {
-					String directory = outPath + "\\" + currentArchivePath + "\\";
-					String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
-					ZipDirectory.zipDirectory(directory, filename);			
-				}
+			processMetadata(input);
+			
+			closeOutputFiles();
+			
+			if (itemCount == archiveSize) {
+				String directory = outPath + "\\" + currentArchivePath + "\\";
+				String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
+				ZipDirectory.zipDirectory(directory, filename);			
+			}
 			
 		} catch (Exception e) {
 			throw e;
@@ -324,14 +298,19 @@ public class CFSFileProcessor implements FileProcessor {
 		if (StringUtils.isEmpty(input.getUid())) {
 			throw new Exception("UUID should not be null");
 		} else {
-			//printElement();
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getUid(), "cfsid", null);
 		}
 		
 		// Title
 		if (StringUtils.isEmpty(input.getTitle())) {
 			throw new Exception("Title should not be null");
 		} else {
-			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TITLE_A), input.getTitle(), "en");
+			Language detectedLanguage = detector.detectLanguageOf(input.getTitle());
+			if (detectedLanguage.equals(ENGLISH)) {
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TITLE_A), input.getTitle(), "en");
+			} else {
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TITLE_A), input.getTitle(), "fr");
+			}	
 		}
 		
 		// Issue Date
@@ -378,6 +357,62 @@ public class CFSFileProcessor implements FileProcessor {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getDoi(), "doi", null);
 		}
 		
+		// ISSN
+		if (!StringUtils.isEmpty(input.getIssn())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getIssn(), "issn", null);
+		}
+				
+		// ISBN
+		if (!StringUtils.isEmpty(input.getIsbn())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getIsbn(), "isbn", null);
+		}
+				
+		// Type
+		if (input.getType() != null) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TYPE), input.getType().getData().getName().getEn(), "en");
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TYPE), input.getType().getData().getName().getFr(), "fr");
+		}
+		
+		// Subjects
+		if (input.getSubjects() != null) {
+			for (SubjectData subject : input.getSubjects().getData()) {
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), subject.getSubject().getEn(), "en");
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), subject.getSubject().getFr(), "fr");
+			}
+		}
+		
+		// Series
+		if (input.getSeries() != null && StringUtils.isNotEmpty(input.getSeries().getData().getName().getEn())) {
+			printRelationship(ELEMENT_SERIAL_CFS, input.getSeries().getData().getName().getEn());	
+		}
+		
+		// Division (Centre)
+		if (input.getCentre() != null && StringUtils.isNotEmpty(input.getCentre().getData().getUid())) {
+			printRelationship(ELEMENT_DIVISION, input.getCentre().getData().getUid());	
+		}
+		
+		// Sponsor (Program - promis)
+		if (input.getPrograms().getData() != null) {
+			for (ProgramData program : input.getPrograms().getData()) {
+				printRelationship(ELEMENT_FUNDING_CFS, program.getProgram().getEn());
+			}		
+		}
+		
+		// Keywords
+		if (StringUtils.isNotEmpty(input.getKeywords())) {
+			String keywords = input.getKeywords().replace("\r\n", ", ");
+			List<String> keywordList = Arrays.asList(keywords.split(","));
+			String lang = "en";
+			for (String keyword : keywordList) {
+				Language detectedLanguage = detector.detectLanguageOf(input.getTitle());
+				if (detectedLanguage.equals(FRENCH)) {
+					lang = "fr";
+				}
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_OTHER), keyword.trim(), lang);				
+			}
+		}
+		
+		/*
 		final LanguageDetector detector = LanguageDetectorBuilder.fromLanguages(ENGLISH, FRENCH).build();
 		final Language detectedLanguage = detector.detectLanguageOf("languages are awesome");
 		System.out.println(input.getType().getData().getName().getEn() + " - " + detector.detectLanguageOf(input.getType().getData().getName().getEn()));
@@ -392,6 +427,7 @@ public class CFSFileProcessor implements FileProcessor {
 			System.out.println(input.getCentre().getData().getName().getEn() + " - " + detector.detectLanguageOf(input.getCentre().getData().getName().getEn()));
 			System.out.println(input.getCentre().getData().getName().getFr() + " - " + detector.detectLanguageOf(input.getCentre().getData().getName().getFr()));
 		}
+		*/
 	}
 	
 	private void printElement(PrintStream stream, String template, String value, String lang) {			
@@ -419,479 +455,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		relationshipsFileStream.println(output);				
 	}
-	
-	private void processElement(String element, String line) throws Exception {
-		
-		if (element.contentEquals(ELEMENT_CONTENT)) {
-			processContent(element, line);
-			return;
-		}
-		
-		if (relationshipElements.containsKey(element)) {
-			processRelationship(element, line);
-			if (!element.contentEquals(ELEMENT_FUNDING)) {
-				return;
-			}		
-		}
-		
-		String value = "";
-		String language = "";
-		String qualifier = "";
-		
-		switch (element) {
-			case ELEMENT_TYPE :
-				value = getElementGenericCapitalize(line);
-				break;
-			case ELEMENT_TITLE_M :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = getElementLanguageGeneric(line);
-				if (bibLevel.toLowerCase().contentEquals("m")) {
-					element = ELEMENT_TITLE_A;
-				}
-				break;
-			case ELEMENT_TITLE_A :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = getElementLanguageGeneric(line);
-				break;
-			case ELEMENT_ABSTRACT :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = getElementLanguageGeneric(line);
-				break;
-			case ELEMENT_SUMMARY :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = getElementLanguageGeneric(line);
-				break;
-			case ELEMENT_VOLUME :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_ISSUE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_OPEN_ACCESS :
-				value = getElementOpenAccess(line);
-				break;
-			case ELEMENT_OPEN_ACCESS_TYPE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_STATUS :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DATE_RECORD_SENT :
-				value = getElementDateRecordTouched(line);
-				break;
-			case ELEMENT_PREVIOUS_FILENAME :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RECORD_MODIFIED :
-				value = getElementDateRecordTouched(line);
-				break;
-			case ELEMENT_ARCHIVAL_FILE :
-				value = getElementArchivalFile(line);
-				break;
-			case ELEMENT_IDENTIFIER :
-				value = getElementIdentifier(line);
-				qualifier = getElementIdentifierQualifier(line).toLowerCase();
-				if (line.contains("GID")) {
-					geoScanId = value;
-				}
-				break;
-			case ELEMENT_CONTRIBUTOR :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_NTS :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_PAGE_RANGE :
-				value = getElementGeneric(line);
-				break;	
-			case ELEMENT_TOTAL_PAGES :
-				value = getElementGeneric(line);
-				break;	
-			case ELEMENT_LANGUAGE :
-				value = getElementLanguage(line);
-				break;
-			case ELEMENT_FILE_TYPE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_MEDIA :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_LANGUAGE_ABSTRACT :
-				value = getElementLanguage(line);
-				break;
-			case ELEMENT_ONLINE_URL :
-				value = getElementGeneric(line);
-				value = StringEscapeUtils.escapeXml(value);
-				break;
-			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_E :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "en";
-				break;
-			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_F :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "fr";
-				break;
-			case ELEMENT_NOTES :
-				line = line.replace("\n", " - ").replace("\r", " - ");
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DOCTYPE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_POLYGON_WENS :
-				value = getElementPolygonWENS(line);
-				if (containsNumber(value)) {
-					bBoxes.add(value);
-				}		
-				return;
-			case ELEMENT_POLYGON_DEG :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_COVERAGE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_POLICY_PAAE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_POLICY_IMPLICATION_E :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "en";
-				break;
-			case ELEMENT_POLICY_IMPLICATION_F :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "fr";
-				break;
-			case ELEMENT_POLICY_RELEVANCE_E :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "en";
-				break;
-			case ELEMENT_POLICY_RELEVANCE_F :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				language = "fr";
-				break;
-			case ELEMENT_GEOP_SURVEY :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_GEOGRAPHY :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_WEB_ACCESSIBLE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_EDITION :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RELATION_REF :
-				value = getElementGeneric(line);
-				element = getRelationElement(value);
-				value = "GID:" + value.substring(value.indexOf("-") + 1);
-				break;
-			case ELEMENT_BIBLIOGRAPHIC_LEVEL :
-				value = getElementGeneric(line);
-				bibLevel = value;
-				return;
-			case ELEMENT_SUBJECT_DESCRIPTOR :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_IMAGE :
-				value = getElementGeneric(line);
-				value = StringEscapeUtils.escapeXml(value);
-				processThumbnail(element, line);
-				return;
-			case ELEMENT_SUBJECT_GEOSCAN :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_SUBJECT_BROAD :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_SUBJECT_GC :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_SUBJECT_OTHER :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_ARTICLE_NUMBER :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DOWNLOAD :
-				value = getElementDownload(line);
-				break;
-			case ELEMENT_RECORD_CREATED :
-				value = getElementRecordCreated(line);
-				language = "en";
-				break;
-			case ELEMENT_README_E :
-				value = getElementGeneric(line);
-				language = "en";
-				break;
-			case ELEMENT_README_F :
-				value = getElementGeneric(line);
-				language = "fr";
-				break;
-			case ELEMENT_THESIS :
-				value = getElementThesis(line);
-				break;
-			case ELEMENT_TOTAL_SHEETS :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_CONT_DESCR :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_MAP :
-				value = getElementMap(line);
-				break;
-			case ELEMENT_FUNDING :
-				value = getElementFundingCode(line);
-				if (value == null) {
-					value = getElementFundingLegacy(line);
-					if (value == null) {
-						return;
-					}				
-					language = getElementFundingLegacyLang(line);
-					element = ELEMENT_FUNDING_LEGACY;
-				} else {
-					return;
-				}
-				break;
-			case ELEMENT_MEETING_NAME :
-				value = getElementGeneric(line);
-				value = replaceLTGT(value);
-				value = StringEscapeUtils.escapeXml(value);
-				break;
-			case ELEMENT_MEETING_DATE :
-				value = getElementGeneric(line);
-				handleMeetingDate(value);
-				return;
-			case ELEMENT_MEETING_CITY :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_MEETING_COUNTRY :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_PRINT_DATE :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RELATION :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RELATION_URL :
-				value = getElementRelationUrl(line);
-				value = StringEscapeUtils.escapeXml(value);
-				break;
-			case ELEMENT_ALTERNATE_FORMAT :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DATE :
-				dateIssued = getElementGeneric(line);
-				return;
-			case ELEMENT_DATE_SUBMITTED :			
-				if (firstDateSubmitted) {
-					firstDateSubmitted = false;
-										
-					if (dateIssued != null && dateIssued.contentEquals(getElementGeneric(line).substring(0,4))) {
-						dateIssued = getElementGeneric(line);
-					}
 
-					element = ELEMENT_DATE_AVAILABLE;
-					value = getElementGeneric(line);
-					break;
-				}
-				value = getElementRecordUpdated(line);
-				lastDateUpdated = value;
-				break;
-			case ELEMENT_NUMBER_OF_MAPS :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DIGITAL :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_CONTAINS_MAP :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_IS_OR_HAS_MAP :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RELATION_PHOTO :
-				handleRelationPhotoElement(getElementGeneric(line));
-				return;
-			case ELEMENT_REPORT_NUMBER :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_RELATION_ERRATUM :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_CLASSIFICATION :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_DURATION :
-				value = getElementGeneric(line);
-				break;
-			case ELEMENT_SEC_SERIAL_NUMBER :
-				value = getElementGeneric(line);
-				element = ELEMENT_SEC_SERIAL_NUMBER + secSerials.get(++secSerialNumberCount);
-				if (element.contentEquals("secserialnumbernull")) {
-					System.out.println("GID: " + geoScanId + " - Too many serials or no serial code");
-					return;
-				}
-				break;
-			default :
-				unknownElements.add(element);
-				return;
-		};
-		
-		boolean isDCElement = true;
-		boolean isGeospatialElement = true;
-		String template = dcElementTemplates.get(element);
-		if (StringUtils.isEmpty(template)) {
-			isDCElement = false;
-			template = geospatialElementTemplates.get(element);
-			if (StringUtils.isEmpty(template)) {
-				isGeospatialElement = false;
-				template = nrcanElementTemplates.get(element);
-			}
-		}
-		
-		try {
-			template = template.replace(VALUE, value);
-		} catch (Exception e) {
-			unknownElements.add(element);
-			if (element.contentEquals("fundinglegacy")) {
-				unknownElements.add(element);
-			}
-			return;
-		}
-		
-		template = template.replace(LANGUAGE, language);
-		template = template.replace(QUALIFIER, qualifier);
-		
-		if (isDCElement) {
-			dublinCoreFileStream.println(template);
-		} else if (isGeospatialElement) {
-			geospatialFileStream.println(template);
-		} else {
-			nrcanFileStream.println(template);
-		}
-		
-	}
-	
-	private void processContent(String element, String line) {
-		
-		String value = getElementGeneric(line);
-
-		String output = "-r -s 0 -f " + value;
-		
-		contentsFileStream.println(output);
-	}
-	
-	private void processThumbnail(String element, String line) {
-		
-		String value = getElementGeneric(line);
-		
-		value = "thumbnails" + value.substring(value.lastIndexOf("/"));
-
-		String output = "-r -s 0 -f " + value;
-		
-		output = output + "\tbundle:THUMBNAIL";
-		
-		contentsFileStream.println(output);
-	}
-	
-	private void processRelationship(String element, String line) {
-		
-		String value = "";
-		switch (element) {
-		case ELEMENT_SERIAL_CODE :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_REPORT_SERIAL_CODE :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_PUBLISHER :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_AUTHOR_A :
-			value = getAuthorMigrationId(line);
-			break;
-		case ELEMENT_AUTHOR_M :
-			value = getAuthorMigrationId(line);
-			if (bibLevel.toLowerCase().contentEquals("m")) {
-				element = ELEMENT_AUTHOR_A;
-			}
-			break;
-		case ELEMENT_COUNTRY :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_PROVINCE :
-			value = getElementGeneric(line);
-			if (value.contentEquals("can")) {
-				return;
-			}
-			if (existingProvinceCodes.contains(value)) {
-				return;
-			} else {
-				existingProvinceCodes.add(value);
-			}
-			break;
-		case ELEMENT_AREA :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_DIVISION :
-			value = getElementDivision(line);
-			if (existingDivisionCodes.contains(value)) {
-				return;
-			} else {
-				existingDivisionCodes.add(value);
-			}
-			break;
-		case ELEMENT_CORP_AUTHOR_A :
-			value = getElementGeneric(line);
-			break;
-		case ELEMENT_CORP_AUTHOR_M :
-			value = getElementGeneric(line);
-			if (bibLevel.toLowerCase().contentEquals("m")) {
-				element = ELEMENT_CORP_AUTHOR_A;
-			}
-			break;
-		case ELEMENT_FUNDING :
-			value = getElementFundingCode(line);
-			if (value == null || existingFundingCodes.contains(value)) {
-				return;
-			} else {
-				existingFundingCodes.add(value);
-			}
-			break;
-		case ELEMENT_SEC_SERIAL_CODE :
-			secSerialCount++;
-			value = getElementGeneric(line);
-			if (existingSecSerialCodes.size() == 0 || !existingSecSerialCodes.contains(value)) {
-				existingSecSerialCodes.add(value);
-				secSerials.put(secSerialCount, ++uniqueSecSerialCount);			
-			} else {
-				secSerials.put(secSerialCount, uniqueSecSerialCount);
-				return;
-			}
-			break;
-		default :
-			//
-		};
-		
-		Relationship rel = relationshipElements.get(element);
-		
-		String output = "relationship." + rel.getName() + " " + rel.getAttribute() + ":" + value;
-		
-		relationshipsFileStream.println(output);
-	}
-	
 	private void createDirectory(String path) {
 		File theDir = new File(path);
 		if (!theDir.exists()){
@@ -957,7 +521,7 @@ public class CFSFileProcessor implements FileProcessor {
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_E, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_ABSTRACT, "<dcvalue element=\"description\" qualifier=\"abstract\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
-		dcElementTemplates.put(ELEMENT_TYPE, "<dcvalue element=\"type\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_TYPE, "<dcvalue element=\"type\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_DESCRIPTOR, "<dcvalue element=\"subject\" qualifier=\"descriptor\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_GEOSCAN, "<dcvalue element=\"subject\" qualifier=\"geoscan\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_BROAD, "<dcvalue element=\"subject\" qualifier=\"broad\">" + VALUE + "</dcvalue>");
@@ -1052,6 +616,7 @@ public class CFSFileProcessor implements FileProcessor {
 					
 		relationshipElements = new HashMap<String, Relationship>();
 		
+		relationshipElements.put(ELEMENT_SERIAL_CFS, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_AUTHOR_A, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_AUTHOR, ATTRIBUTE_MIGRATION_ID));
@@ -1064,6 +629,7 @@ public class CFSFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
+		relationshipElements.put(ELEMENT_FUNDING_CFS, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		
@@ -1075,466 +641,11 @@ public class CFSFileProcessor implements FileProcessor {
 		ignoredElements.add(ELEMENT_BIBLIOGRAPHIC_LEVEL);
 		
 	}
-		
-	private void printBBox() {	
-		
-		if (bBoxes.size() > 0) {
-			String value = combineBBoxes();
-			
-			if (bBoxes.size() > 1) {
-				for (String val : bBoxes) {
-					String template = nrcanElementTemplates.get(ELEMENT_POLYGON_WENS);
-	
-					template = template.replace(VALUE, val);
-					
-					nrcanFileStream.println(template);
-				}
-			}
-			
-			String template = geospatialElementTemplates.get(ELEMENT_BBOX);
-
-			template = template.replace(VALUE, value);
-			
-			geospatialFileStream.println(template);
-		}
-				
-	}
-	
-	private String combineBBoxes() {
-		if (bBoxes.size() == 1) {
-			return bBoxes.get(0);
-		} else {
-			Float maxW = null;
-			Float maxE = null;
-			Float maxN = null;
-			Float maxS = null;
-			float bBoxW, bBoxE, bBoxN, bBoxS;
-			
-			for (String bBox : bBoxes) {
-				try {
-					bBox = bBox.substring(8);
-					bBox = bBox.replace("(", "");
-					bBox = bBox.replace(")", "");
-					
-					List<String> tokens = new ArrayList<String>();
-					StringTokenizer tokenizer = new StringTokenizer(bBox, ",");
-				    while (tokenizer.hasMoreElements()) {
-				        tokens.add(tokenizer.nextToken());
-				    }
-				    
-				    bBoxW = Float.parseFloat(tokens.get(0));
-				    bBoxE = Float.parseFloat(tokens.get(1));
-				    bBoxN = Float.parseFloat(tokens.get(2));
-				    bBoxS = Float.parseFloat(tokens.get(3));
-				    
-				    if (maxW == null || bBoxW < maxW) {
-				    	maxW = bBoxW;
-				    }
-				    if (maxE == null || bBoxE > maxE) {
-				    	maxE = bBoxE;
-				    }
-				    if (maxN == null || bBoxN > maxN) {
-				    	maxN = bBoxN;
-				    }
-				    if (maxS == null || bBoxS < maxS) {
-				    	maxS = bBoxS;
-				    }
-				} catch (Exception e) {
-					throw e;
-				}
-			}
-			return "ENVELOPE(" + maxW + ", " + maxE + ", " + maxN + ", " + maxS + ")";
-		}		
-	}
-	
-	private String getElementGeneric(String line) {
-		try {
-			return line.substring(line.indexOf(">") + 1, line.substring(1).indexOf("<") + 1);
-		} catch (Exception e) {
-			throw e;
-		}		
-	}
-	
-	@SuppressWarnings("deprecation")
-	private String getElementGenericCapitalize(String line) {
-		line = getElementGeneric(line);
-		WordUtils.capitalize(line);
-		return line;
-	}
-	
-	private String getElementLanguageGeneric(String line) {
-		int pos = line.indexOf("xml:lang");
-		return line.substring(pos + 10, pos + 12);
-	}
-	
-	private String getElementLanguage(String line) {
-		line = getElementGeneric(line).trim();
-		if (line.contentEquals("eng")) {
-			line = "en";
-		} else if (line.contentEquals("fre")) {
-			line = "fr";
-		}
-		return line;
-	}
-	
-	private String getElementIdentifier(String line) {
-		int pos = line.indexOf("/");
-		return line.substring(pos + 1, line.indexOf("</"));
-	}
-	
-	private String getElementIdentifierQualifier(String line) {
-		int pos = line.indexOf("info:");
-		return line.substring(pos + 5, line.indexOf("/"));
-	}
-	
-	private String getElementOpenAccess(String line) {
-		line = getElementGeneric(line).trim();
-		return line.substring(0, line.indexOf(" "));
-	}
-	
-	private String getElementPolygonWENS(String line) {
-		line = getElementGeneric(line);
-		if (StringUtils.isEmpty(line) || line.charAt(1) == ',') {
-			return "";
-		}
-		return "ENVELOPE" + line;
-	}
-	
-	private String getElementDivision(String line) {
-		int pos = line.indexOf("code");
-		return line.substring(pos + 5, line.indexOf("</"));
-	}
-	
-	private String getElementRecordCreated(String line) {
-		int pos = line.indexOf("<date>");
-		line = line.substring(pos + 6, line.indexOf("</date"));
-		return "Record added to GEOScan on " + line;
-	}
-	
-	private String getElementRecordUpdated(String line) {
-		line = getElementGeneric(line);
-		return "Contents updated on " + line;
-	}
-	
-	private String getElementThesis(String line) {
-		int pos = line.indexOf("<degree>");
-		String degree = line.substring(pos + 8, line.indexOf("</degree"));
-		pos = line.indexOf("<univ>");
-		String univ = line.substring(pos + 6, line.indexOf("</univ"));
-		pos = line.indexOf("<city>");
-		String city = line.substring(pos + 6, line.indexOf("</city"));
-		pos = line.indexOf("<country>");
-		String country = line.substring(pos + 9, line.indexOf("</country"));
-		return degree + " - " + univ + " - " + city + " - " + country;
-	}
-	
-	private String getElementDownload(String line) {
-		int pos = line.indexOf("<service>");
-		String service = line.substring(pos + 8, line.indexOf("</service"));
-		pos = line.indexOf("<filename>");
-		if (pos < 0) {
-			return "";
-		}
-		String filename = line.substring(pos + 9, line.indexOf("</filename"));
-		return filename;
-	}
-	
-	private String getElementArchivalFile(String line) {
-		int pos = line.indexOf("<name>");
-		String name = line.substring(pos + 5, line.indexOf("</name"));
-		pos = line.indexOf("<folder>");
-		String folder = line.substring(pos + 7, line.indexOf("</folder"));
-		pos = line.indexOf("<size>");
-		String size = line.substring(pos + 5, line.indexOf("</size"));
-		return folder + " - " + name + " - " + size;
-	}
-	
-	private String getElementDateRecordTouched(String line) {
-		int pos = line.indexOf("<name>");
-		String name = line.substring(pos + 6, line.indexOf("</name"));
-		pos = line.indexOf("<date>");
-		String date = line.substring(pos + 6, line.indexOf("</date"));
-		return date + " - " + name;
-	}
-	
-	private String getElementMap(String line) {
-		int pos = line.indexOf("<general>");
-		String type = line.substring(pos + 8, line.indexOf("</general"));
-		pos = line.indexOf("<scale>");
-		if (pos > 0) {
-			String scale = line.substring(pos + 7, line.indexOf("</scale"));
-			return type + " - " + scale;
-		}
-		return type;
-	}
-	
-	private String getElementFundingCode(String line) {
-		int pos = line.indexOf("Code>");
-		if (pos < 0) {
-			return null;
-		}
-		String code = line.substring(pos + 5, line.indexOf("</Project Code"));
-		return code;
-	}
-	
-	private String getElementFundingLegacy(String line) {
-		try {
-			if (line.contentEquals("<Funding></Funding>")) {
-				return null;
-			}
-			
-			int pos = line.indexOf("Program En>");
-			String lang = "En";
-			if (pos < 0) {
-				pos = line.indexOf("Program Fr>");
-				lang = "Fr";
-			}
-			String program = line.substring(pos + 10, line.indexOf("</Program " + lang));
-			
-			pos = line.indexOf("Project En>");
-			if (pos < 0) {
-				pos = line.indexOf("Project Fr>");
-			}
-			String project = "";
-			if (pos > 0) {
-				project = line.substring(pos + 10, line.indexOf("</Project " + lang));
-			}
-			
-			pos = line.indexOf("URL En>");
-			if (pos < 0) {
-				pos = line.indexOf("URL Fr>");
-			}
-			String url = "";
-			if (pos > 0) {
-				project = line.substring(pos + 10, line.indexOf("</URL " + lang));
-			}
-			return program + " - " + project + " - " + url;
-		} catch (Exception e) {
-			throw e;
-		}
-	}
-	
-	private String getElementFundingLegacyLang(String line) {
-		int pos = line.indexOf("Program En>");
-		if (pos < 0) {
-			return "fr";
-		}
-		return "en";
-	}
-	
-	private String getElementRelationUrl(String line) {
-		int pos = line.indexOf("<label>");
-		String label = line.substring(pos + 7, line.indexOf("</label"));
-		pos = line.indexOf("<URL>");
-		String url = line.substring(pos + 5, line.indexOf("</URL"));
-		return label + " - " + url;
-	}
-	
-	private String getAuthorMigrationId(String line) {
-		try {
-			int pos = line.indexOf("given_name");
-			String firstName = line.substring(pos + 11, line.indexOf("</given_name"));
-			pos = line.indexOf("surname");
-			String lastName = line.substring(pos + 8, line.indexOf("</surname"));
-			String deptId = "";
-			try {
-				pos = line.indexOf("dpsid");
-				deptId = line.substring(pos + 6, line.indexOf("</dpsid"));
-			} catch (Exception e) {
-				//
-			}
-			String orcId = "";
-			try {
-				pos = line.indexOf("ORCID");
-				orcId = line.substring(pos + 44, line.indexOf("</ORCID"));
-			} catch (Exception e) {
-				//
-			}
-			return firstName + "_" + lastName + "_" + deptId + "_" + orcId;
-		} catch (Exception e) {
-			return null;
-		}		
-	}
-	
-	private void handleRelationPhotoElement(String line) {
-		List<String> tokens = getTokensWithCollection(line);
-		for (String token : tokens) {
-			if (token.contains(":")) {
-				String start = token.substring(0, token.indexOf(":"));
-				String end = token.substring(token.indexOf(":") + 1);
-				
-				int startNum = Integer.parseInt(start.substring(start.indexOf("-") + 1));
-				int endNum = Integer.parseInt(end.substring(end.indexOf("-") + 1));
-				
-				String value = "";
-				for (int i=startNum;i<=endNum;i++) {
-					value = start.substring(0, start.indexOf("-"));
-					value = value + "-" + i;
-					printRelationPhotoElement(value);
-				}
-				
-			} else {
-				printRelationPhotoElement(token);
-			}
-		}
-	}
-	
-	private void printRelationPhotoElement(String value) {
-		String template = nrcanElementTemplates.get(ELEMENT_RELATION_PHOTO);
-
-		template = template.replace(VALUE, value);
-		
-		nrcanFileStream.println(template);
-	}
 	
 	public List<String> getTokensWithCollection(String str) {
 	    return Collections.list(new StringTokenizer(str, ";")).stream()
 	      .map(token -> (String) token)
 	      .collect(Collectors.toList());
-	}
-	
-	private String getRelationElement(String value) throws Exception {
-		Integer val = Integer.parseInt(value.substring(0, value.indexOf("-")));
-		String element = null;
-		switch (val) {
-			case 1 :
-				element = ELEMENT_RELATION_REPLACES;
-				break;
-			case 2 :
-				element = ELEMENT_RELATION_ACCOMPANIES;
-				break;
-			case 3 :
-				element = ELEMENT_RELATION_ISREPLACEDBY;
-				break;
-			case 4 :
-				element = ELEMENT_RELATION_ISRELATEDTO;
-				break;
-			case 5 :
-				element = ELEMENT_RELATION_ISPARTOF;
-				break;
-			case 6 :
-				element = ELEMENT_RELATION_ISACCOMPANIEDBY;
-				break;
-			case 7 :
-				element = ELEMENT_RELATION_CONTAINS;
-				break;
-			case 8 :
-				element = ELEMENT_RELATION_ISENLARGEDFROM;
-				break;
-			case 9 :
-				element = ELEMENT_RELATION_ISREDUCEDFROM;
-				break;
-			case 10 :
-				element = ELEMENT_RELATION_ISTRANSLATIONOF;
-				break;
-			case 11 :
-				element = ELEMENT_RELATION_ISREPRINTEDFROM;
-				break;
-			case 12 :
-				element = ELEMENT_RELATION_TBD;
-				break;
-			case 13 :
-				element = ELEMENT_RELATION_ISREPRINTEDIN;
-				break;
-			default :
-				throw new Exception("No match");
-		}
-		
-		return element;
-	}
-	
-	private void handleMeetingDate(String value) throws Exception {
-		try {	
-			LocalDate startDate = null;
-			LocalDate endDate = null;
-			
-			DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMMM d uuuu");
-			DateTimeFormatter formatter2 = DateTimeFormatter.ofPattern("MMMM d, uuuu");
-			
-			if (value.contains("-")) {
-				long spaceCount = value.chars().filter(ch -> ch == ' ').count();
-				value = value.replace(",", "");		
-				
-				// July 8-12, 2002
-				if (spaceCount == 2) {
-					
-					String endDateString = value.substring(value.indexOf("-") + 1);
-					endDateString = value.substring(0, value.indexOf(" ")) + " " + endDateString;
-					endDate = LocalDate.parse(endDateString, formatter);
-					String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
-					startDate = LocalDate.parse(startDateString, formatter);
-									
-				//April 29-May 11, 1974
-				} else if (spaceCount == 3) {
-				
-					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
-					String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
-					startDate = LocalDate.parse(startDateString, formatter);				
-					
-				// Dec 28, 2011-Jan 2, 2012
-				} else if (spaceCount == 4) {
-					
-					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
-					startDate = LocalDate.parse(value.substring(0, value.indexOf("-")), formatter);
-					
-					
-				// September 28 - October 1, 1987
-				} else if (spaceCount == 5) {
-					
-					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1).trim(), formatter);
-					String startDateString = value.substring(0, value.indexOf("-")).trim() + " " + endDate.getYear();
-					startDate = LocalDate.parse(startDateString, formatter);				
-								
-				} else {
-					throw new Exception("Unhandled date format: " + value);
-				}
-				
-			// May 19, 2020
-			} else if (value.contains(",")) {
-				startDate = LocalDate.parse(value, formatter2);
-				endDate = startDate;
-			
-			// 1970
-			} else {
-				String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
-				template = template.replace(VALUE, value);
-				nrcanFileStream.println(template);
-				
-				template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
-				template = template.replace(VALUE, value);
-				nrcanFileStream.println(template);
-				
-				return;
-			}
-			
-			String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
-			template = template.replace(VALUE, startDate.format(DateTimeFormatter.ISO_DATE));
-			nrcanFileStream.println(template);
-			
-			template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
-			template = template.replace(VALUE, endDate.format(DateTimeFormatter.ISO_DATE));
-			nrcanFileStream.println(template);
-		
-		} catch (Exception e) {
-			System.out.println("GID: " + geoScanId + " - Meeting Date: " + value);
-		}
-	}
-	
-	private boolean containsNumber(String value) {
-		// Test to see if this contains a numeric value, otherwise junk
-		char[] ch = value.toCharArray();
-		for(char c : ch) {
-			if(Character.isDigit(c)){
-				return true;
-			}
-		}
-		return false;
-	}
-	
-	private String replaceLTGT(String value) {
-		value = value.replace("&amp;lt;", "&lt;");
-		value = value.replace("&amp;gt;", "&gt;");
-		return value;
 	}
 
 }

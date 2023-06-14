@@ -3,10 +3,10 @@ package org.dspace.tools.nrcan.migration.filebuilder.model;
 import lombok.Getter;
 import lombok.Setter;
 
-public class Programs {
+public class ProgramData {
 
 	@Getter
 	@Setter
-	ProgramData[] data;
+	ProgramDetailData program;
 	
 }
