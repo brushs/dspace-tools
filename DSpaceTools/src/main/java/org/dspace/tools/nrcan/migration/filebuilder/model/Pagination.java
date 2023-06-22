@@ -3,13 +3,14 @@ package org.dspace.tools.nrcan.migration.filebuilder.model;
 import lombok.Getter;
 import lombok.Setter;
 
-public class CFSFile {
+public class Pagination {
 
 	@Getter
 	@Setter
-	CFSItem[] data;
+	String rel;
 	
 	@Getter
 	@Setter
-	Meta meta;
+	String uri;
+	
 }

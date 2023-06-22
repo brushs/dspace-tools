@@ -173,9 +173,11 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_ISREPRINTEDFROM = "isreprintedfrom";
 	private static final String ELEMENT_RELATION_ISREPRINTEDIN = "isreprintedin";
 	private static final String ELEMENT_RELATION_TBD = "tbd";
-	private static final String ELEMENT_AUTHOR_CFS = "author";
-	private static final String ELEMENT_SERIAL_CFS = "serial";
-	private static final String ELEMENT_FUNDING_CFS = "funding";
+	private static final String ELEMENT_AUTHOR_CFS = "authorCFS";
+	private static final String ELEMENT_SERIAL_CFS = "serialCFS";
+	private static final String ELEMENT_FUNDING_CFS = "fundingCFS";
+	private static final String ELEMENT_DIVISION_CFS = "divisionCFS";
+	private static final String ELEMENT_JOURNAL_CFS = "journalCFS";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -189,6 +191,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String RELATIONSHIP_AREA = "isAreaOfPublication";
 	private static final String RELATIONSHIP_DIVISION = "isDivisionOfPublication";
 	private static final String RELATIONSHIP_SPONSOR = "isSponsorOfPublication";
+	private static final String RELATIONSHIP_JOURNAL = "isJournalOfPublication";
 	
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
@@ -315,7 +318,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		// Issue Date
 		if (StringUtils.isEmpty(input.getYear())) {
-			throw new Exception("Year should not be null");
+			System.out.println("UID:" + input.getUid() + " - Year should not be null");
 		} else {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_DATE_ISSUED), input.getYear(), null);
 		}
@@ -366,11 +369,26 @@ public class CFSFileProcessor implements FileProcessor {
 		if (!StringUtils.isEmpty(input.getIsbn())) {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getIsbn(), "isbn", null);
 		}
+		
+		// Volume
+		if (!StringUtils.isEmpty(input.getVolume())) {
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_VOLUME), input.getVolume(), null, null);
+		}
+		
+		// Issue
+		if (!StringUtils.isEmpty(input.getIssue())) {
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_ISSUE), input.getIssue(), null, null);
+		}
 				
 		// Type
 		if (input.getType() != null) {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TYPE), input.getType().getData().getName().getEn(), "en");
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TYPE), input.getType().getData().getName().getFr(), "fr");
+		}
+		
+		// Journal
+		if (!StringUtils.isEmpty(input.getPublication_name())) {
+			printRelationship(ELEMENT_JOURNAL_CFS, input.getPublication_name());	
 		}
 		
 		// Subjects
@@ -388,7 +406,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		// Division (Centre)
 		if (input.getCentre() != null && StringUtils.isNotEmpty(input.getCentre().getData().getUid())) {
-			printRelationship(ELEMENT_DIVISION, input.getCentre().getData().getUid());	
+			printRelationship(ELEMENT_DIVISION_CFS, input.getCentre().getData().getName().getEn());	
 		}
 		
 		// Sponsor (Program - promis)
@@ -628,10 +646,12 @@ public class CFSFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
+		relationshipElements.put(ELEMENT_DIVISION_CFS, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
 		relationshipElements.put(ELEMENT_FUNDING_CFS, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
+		relationshipElements.put(ELEMENT_JOURNAL_CFS, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_TITLE));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
 		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");

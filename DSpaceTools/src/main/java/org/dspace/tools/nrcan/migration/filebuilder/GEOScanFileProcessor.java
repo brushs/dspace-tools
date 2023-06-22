@@ -71,6 +71,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> existingSecSerialCodes = new HashSet<String>();
 	private Set<String> existingCountryCodes = new HashSet<String>();
 	private Set<String> existingAuthorCodes = new HashSet<String>();
+	private Set<String> existingMonoCorpAuthorCodes = new HashSet<String>();
+	private Set<String> existingCorpAuthorCodes = new HashSet<String>();
+	private Set<String> existingPublisherCodes = new HashSet<String>();
 	private List<String> bBoxes = new ArrayList<String>();
 	
 	private static final String VALUE = "##VALUE##";
@@ -194,6 +197,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_RELATION_ISREPRINTEDFROM = "isreprintedfrom";
 	private static final String ELEMENT_RELATION_ISREPRINTEDIN = "isreprintedin";
 	private static final String ELEMENT_RELATION_TBD = "tbd";
+	private static final String ELEMENT_COUNTRY_CANADA = "countryCAN";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_JOURNAL = "isJournalOfPublication";
@@ -219,6 +223,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
 	private static final String ATTRIBUTE_JOURNAL_CODE = "nrcan.journal.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
+	private static final String ATTRIBUTE_COUNTRY_CODE = "nrcan.country.code";
 	
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -335,6 +340,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				existingSecSerialCodes = new HashSet<String>();
 				existingCountryCodes = new HashSet<String>();
 				existingAuthorCodes = new HashSet<String>();
+				existingMonoCorpAuthorCodes = new HashSet<String>();
+				existingCorpAuthorCodes = new HashSet<String>();
+				existingPublisherCodes = new HashSet<String>();
 				bBoxes = new ArrayList<String>();
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
@@ -437,6 +445,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_ISSUE :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_OPEN_ACCESS :
 				value = getElementOpenAccess(line);
@@ -514,6 +523,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_AREA_TEXT :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_POLYGON_WENS :
 				value = getElementPolygonWENS(line);
@@ -552,6 +562,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_GEOP_SURVEY :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_GEOGRAPHY :
 				value = getElementGeneric(line);
@@ -561,6 +572,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_EDITION :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_RELATION_REF :
 				value = getElementGeneric(line);
@@ -581,15 +593,19 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			case ELEMENT_SUBJECT_GEOSCAN :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_SUBJECT_BROAD :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_SUBJECT_GC :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_SUBJECT_OTHER :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_ARTICLE_NUMBER :
 				value = getElementGeneric(line);
@@ -794,6 +810,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 		case ELEMENT_PUBLISHER :
 			value = getElementGeneric(line);
 			value = value.toUpperCase();
+			if (existingPublisherCodes.contains(value)) {
+				System.out.println("GID: " + geoScanId + " - Duplicate Publishers?");
+				return;
+			} else {
+				existingPublisherCodes.add(value);
+			}
 			break;
 		case ELEMENT_AUTHOR_A :
 			value = getAuthorMigrationId(line);
@@ -816,6 +838,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			} else {
 				existingCountryCodes.add(value);
+			}
+			if (value.contentEquals("Canada")) {
+				return;
 			}
 			break;
 		case ELEMENT_PROVINCE :
@@ -842,13 +867,32 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_CORP_AUTHOR_A :
 			value = getElementGeneric(line);
-			value = value.replace("&amp;", "&");
+			value = replaceAmp(value);
+			if (existingCorpAuthorCodes.contains(value)) {
+				System.out.println("GID: " + geoScanId + " - Duplicate Corp Authors?");
+				return;
+			} else {
+				existingCorpAuthorCodes.add(value);
+			}
 			break;
 		case ELEMENT_CORP_AUTHOR_M :
 			value = getElementGeneric(line);
-			value = value.replace("&amp;", "&");
+			value = replaceAmp(value);
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_CORP_AUTHOR_A;
+				if (existingCorpAuthorCodes.contains(value)) {
+					System.out.println("GID: " + geoScanId + " - Duplicate Corp Authors?");
+					return;
+				} else {
+					existingCorpAuthorCodes.add(value);
+				}
+			} else {							
+				if (existingMonoCorpAuthorCodes.contains(value)) {
+					System.out.println("GID: " + geoScanId + " - Duplicate Mono Corp Authors?");
+					return;
+				} else {
+					existingMonoCorpAuthorCodes.add(value);
+				}
 			}
 			break;
 		case ELEMENT_FUNDING :
@@ -1050,6 +1094,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_COUNTRY_CANADA, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_COUNTRY_CODE));
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));

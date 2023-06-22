@@ -1,5 +1,7 @@
 package org.dspace.tools.nrcan.migration.filebuilder.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -43,6 +45,26 @@ public class CFSItem {
 	
 	@Getter
 	@Setter
+	String publication_name;
+	
+	@Getter
+	@Setter
+	String volume;
+	
+	@Getter
+	@Setter
+	String issue;
+	
+	@Getter
+	@Setter
+	String page_first;
+	
+	@Getter
+	@Setter
+	String page_last;
+	
+	@Getter
+	@Setter
 	String goc_fo_num;
 	
 	@Getter
@@ -71,6 +93,7 @@ public class CFSItem {
 	
 	@Getter
 	@Setter
+	@JsonProperty(value="abstract")
 	LangValue itemAbstract;
 	
 	@Getter
