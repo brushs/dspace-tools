@@ -585,6 +585,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			case ELEMENT_SUBJECT_DESCRIPTOR :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_IMAGE :
 				value = getElementGeneric(line);
@@ -1599,7 +1600,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	}
 	
 	private String replaceAmp(String value) {
-		value = value.replace(" & ","&amp;");
+		value = value.replace(" & "," &amp; ");
 		return value;
 	}
 }

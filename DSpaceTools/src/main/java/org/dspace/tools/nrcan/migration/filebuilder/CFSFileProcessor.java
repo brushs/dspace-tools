@@ -178,6 +178,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_FUNDING_CFS = "fundingCFS";
 	private static final String ELEMENT_DIVISION_CFS = "divisionCFS";
 	private static final String ELEMENT_JOURNAL_CFS = "journalCFS";
+	private static final String ELEMENT_IDENTIFIER_CFS = "identifierCFS";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -196,6 +197,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
 	private static final String ATTRIBUTE_PUB_MIGRATION_ID = "nrcan.publisher.migrationid";
+	private static final String ATTRIBUTE_DIV_MIGRATION_ID = "nrcan.division.migrationid";
 	private static final String ATTRIBUTE_AREA_MIGRATION_ID = "nrcan.area.migrationid";
 	private static final String ATTRIBUTE_DIVISION_CODE = "nrcan.division.code";
 	private static final String ATTRIBUTE_SPONSOR_CODE = "nrcan.sponsor.code";
@@ -301,7 +303,7 @@ public class CFSFileProcessor implements FileProcessor {
 		if (StringUtils.isEmpty(input.getUid())) {
 			throw new Exception("UUID should not be null");
 		} else {
-			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER), input.getUid(), "cfsid", null);
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_IDENTIFIER_CFS), input.getUid(), "cfsid", null);
 		}
 		
 		// Title
@@ -394,8 +396,8 @@ public class CFSFileProcessor implements FileProcessor {
 		// Subjects
 		if (input.getSubjects() != null) {
 			for (SubjectData subject : input.getSubjects().getData()) {
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), subject.getSubject().getEn(), "en");
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), subject.getSubject().getFr(), "fr");
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), replaceAmp(subject.getSubject().getEn()), "en");
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), replaceAmp(subject.getSubject().getFr()), "fr");
 			}
 		}
 		
@@ -406,7 +408,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		// Division (Centre)
 		if (input.getCentre() != null && StringUtils.isNotEmpty(input.getCentre().getData().getUid())) {
-			printRelationship(ELEMENT_DIVISION_CFS, input.getCentre().getData().getName().getEn());	
+			printRelationship(ELEMENT_DIVISION_CFS, input.getCentre().getData().getUid());	
 		}
 		
 		// Sponsor (Program - promis)
@@ -426,7 +428,7 @@ public class CFSFileProcessor implements FileProcessor {
 				if (detectedLanguage.equals(FRENCH)) {
 					lang = "fr";
 				}
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_OTHER), keyword.trim(), lang);				
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_OTHER), replaceAmp(keyword.trim()), lang);				
 			}
 		}
 		
@@ -566,6 +568,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		nrcanElementTemplates = new HashMap<String, String>();
 		
+		nrcanElementTemplates.put(ELEMENT_IDENTIFIER_CFS, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_VOLUME, "<dcvalue element=\"volume\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_ISSUE, "<dcvalue element=\"issue\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_OPEN_ACCESS, "<dcvalue element=\"openaccess\" qualifier=\"\">" + VALUE + "</dcvalue>");
@@ -646,7 +649,7 @@ public class CFSFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
 		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
-		relationshipElements.put(ELEMENT_DIVISION_CFS, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_DIVISION_CFS, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIV_MIGRATION_ID));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
 		relationshipElements.put(ELEMENT_FUNDING_CFS, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
@@ -666,6 +669,11 @@ public class CFSFileProcessor implements FileProcessor {
 	    return Collections.list(new StringTokenizer(str, ";")).stream()
 	      .map(token -> (String) token)
 	      .collect(Collectors.toList());
+	}
+	
+	private String replaceAmp(String value) {
+		value = value.replace(" & "," &amp; ");
+		return value;
 	}
 
 }
