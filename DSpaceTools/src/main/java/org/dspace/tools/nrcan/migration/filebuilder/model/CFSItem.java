@@ -89,6 +89,10 @@ public class CFSItem {
 	
 	@Getter
 	@Setter
+	String cover;
+	
+	@Getter
+	@Setter
 	Link[] links;
 	
 	@Getter

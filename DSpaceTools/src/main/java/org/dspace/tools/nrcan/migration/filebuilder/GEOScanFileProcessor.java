@@ -71,6 +71,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> existingSecSerialCodes = new HashSet<String>();
 	private Set<String> existingCountryCodes = new HashSet<String>();
 	private Set<String> existingAuthorCodes = new HashSet<String>();
+	private Set<String> existingAuthorACodes = new HashSet<String>();
 	private Set<String> existingMonoCorpAuthorCodes = new HashSet<String>();
 	private Set<String> existingCorpAuthorCodes = new HashSet<String>();
 	private Set<String> existingPublisherCodes = new HashSet<String>();
@@ -129,7 +130,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ELEMENT_DATE_RECORD_SENT = "daterecordsent";
 	private static final String ELEMENT_PREVIOUS_FILENAME = "previousfilename";
 	private static final String ELEMENT_COUNTRY = "country";
-	private static final String ELEMENT_AREA = "areaT";
+	private static final String ELEMENT_AREA = "areat";
 	private static final String ELEMENT_AREA_TEXT = "area";
 	private static final String ELEMENT_DIVISION = "division";
 	private static final String ELEMENT_EDITION = "edition";
@@ -340,6 +341,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				existingSecSerialCodes = new HashSet<String>();
 				existingCountryCodes = new HashSet<String>();
 				existingAuthorCodes = new HashSet<String>();
+				existingAuthorACodes = new HashSet<String>();
 				existingMonoCorpAuthorCodes = new HashSet<String>();
 				existingCorpAuthorCodes = new HashSet<String>();
 				existingPublisherCodes = new HashSet<String>();
@@ -714,6 +716,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			case ELEMENT_REPORT_NUMBER :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_RELATION_ERRATUM :
 				value = getElementGeneric(line);
@@ -820,6 +823,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_AUTHOR_A :
 			value = getAuthorMigrationId(line);
+			if (existingAuthorACodes.contains(value)) {
+				System.out.println("GID: " + geoScanId + " - Duplicate Authors?");
+				return;
+			} else {
+				existingAuthorACodes.add(value);
+			}
 			break;
 		case ELEMENT_AUTHOR_M :
 			value = getAuthorMigrationId(line);

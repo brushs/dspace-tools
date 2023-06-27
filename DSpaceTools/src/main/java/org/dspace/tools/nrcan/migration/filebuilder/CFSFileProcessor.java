@@ -219,7 +219,9 @@ public class CFSFileProcessor implements FileProcessor {
 			initializeElementTemplates();
 			
 			for (CFSItem item : file.getData()) {
-				processItem(item);
+				if (isValidItem(item)) {
+					processItem(item);
+				}
 			}
 		}
 		catch(Exception ex) {
@@ -300,6 +302,7 @@ public class CFSFileProcessor implements FileProcessor {
 
 	private void processMetadata(CFSItem input) throws Exception {
 
+		// ID
 		if (StringUtils.isEmpty(input.getUid())) {
 			throw new Exception("UUID should not be null");
 		} else {
@@ -318,6 +321,17 @@ public class CFSFileProcessor implements FileProcessor {
 			}	
 		}
 		
+		// Content
+		if (input.getAvailability().getPdf_download().contentEquals("1") || 
+				input.getAvailability().getPdf_email().contentEquals("1")) {
+			processContent(input.getUid());
+		}
+		
+		// Content
+		if (!input.getCover().contentEquals("false")) {
+			processThumbnail(input.getCover());
+		}
+				
 		// Issue Date
 		if (StringUtils.isEmpty(input.getYear())) {
 			System.out.println("UID:" + input.getUid() + " - Year should not be null");
@@ -676,4 +690,37 @@ public class CFSFileProcessor implements FileProcessor {
 		return value;
 	}
 
+	private void processContent(String id) {
+		
+		String value = "pdfs/" + id + ".pdf";
+		
+		String output = "-r -s 3 -f " + value;
+		
+		contentsFileStream.println(output);
+	}
+	
+	private void processThumbnail(String value) {
+		
+		value = "covers" + value.substring(value.lastIndexOf("/"));
+
+		String output = "-r -s 3 -f " + value;
+		
+		output = output + "\tbundle:THUMBNAIL";
+		
+		contentsFileStream.println(output);
+	}
+	
+	private boolean isValidItem(CFSItem input) {
+		if (input.getType() == null) {
+			return false;
+		}
+
+		if (input.getType().getData().getName().getEn().contentEquals("Journal Article") ||
+				input.getType().getData().getName().getEn().contentEquals("Series Item") ||
+				input.getType().getData().getName().getEn().contentEquals("Monographs")) {
+			return true;
+		}
+		
+		return false;
+	}
 }
