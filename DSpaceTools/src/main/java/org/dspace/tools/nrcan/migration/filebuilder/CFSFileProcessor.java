@@ -204,6 +204,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_CFS_MIGRATION_ID = "nrcan.author.cfsmigrationid";
+	private static final String ATTRIBUTE_JOURNAL_MIGRATION_ID = "nrcan.journal.migrationid";
 	
 	public CFSFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -211,18 +212,26 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 	
 	public void process() {
-		try {		
-			CFSFile file = get(CFSFile.class, inPath);
-			
-			System.out.println(file.toString());
-			
-			initializeElementTemplates();
-			
-			for (CFSItem item : file.getData()) {
-				if (isValidItem(item)) {
-					processItem(item);
+		try {
+			File dir = new File(inPath);
+			File[] directoryListing = dir.listFiles();
+			if (directoryListing != null) {
+				for (File child : directoryListing) {
+					System.out.println("Processing File: " + child.getPath());
+					CFSFile file = get(CFSFile.class, child.getPath());
+					
+					System.out.println(file.toString());
+					
+					initializeElementTemplates();
+					
+					for (CFSItem item : file.getData()) {
+						if (isValidItem(item)) {
+							processItem(item);
+						}
+					}
 				}
 			}
+			
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -235,8 +244,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private <T> T get(Class<T> type, String inPath) {
 		ObjectMapper mapper = new ObjectMapper();
 	    try {
-			//return mapper.readValue(new File("C:\\Users\\steveb\\OneDrive - Apption\\Documents\\NRCan\\CFS\\test1.json"), type);
-	    	return mapper.readValue(new File(inPath), type);
+			return mapper.readValue(new File(inPath), type);
 		} catch (IOException ex) {
 			System.out.println(ex);
 			throw new RuntimeException(ex.getMessage(), ex);
@@ -393,7 +401,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		// Issue
 		if (!StringUtils.isEmpty(input.getIssue())) {
-			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_ISSUE), input.getIssue(), null, null);
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_ISSUE), replaceAmp(input.getIssue()), null, null);
 		}
 				
 		// Type
@@ -668,7 +676,7 @@ public class CFSFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_FUNDING_CFS, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_TITLE));
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
-		relationshipElements.put(ELEMENT_JOURNAL_CFS, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_JOURNAL_CFS, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_JOURNAL_MIGRATION_ID));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
 		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");
@@ -686,7 +694,7 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 	
 	private String replaceAmp(String value) {
-		value = value.replace(" & "," &amp; ");
+		value = value.replace("&","&amp;");
 		return value;
 	}
 

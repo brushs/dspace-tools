@@ -1609,7 +1609,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	}
 	
 	private String replaceAmp(String value) {
-		value = value.replace(" & "," &amp; ");
+		value = value.replace("&","&amp;");
 		return value;
 	}
 }

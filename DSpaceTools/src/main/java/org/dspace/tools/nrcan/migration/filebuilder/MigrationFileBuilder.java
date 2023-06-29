@@ -15,6 +15,7 @@ import org.dspace.tools.nrcan.FileProcessor;
 
 public final class MigrationFileBuilder {
 	private final static char OPT_INPUT_FILE = 'f';
+	private final static char OPT_INPUT_FOLDER = 'd';
 	private final static char OPT_OUTPUT_FILE = 'o';
 	private final static char OPT_TYPE = 't';
 	
@@ -38,12 +39,13 @@ public final class MigrationFileBuilder {
 	
 	private static void processFile(CommandLine cmd) {
 		String inPath = cmd.getOptionValue(OPT_INPUT_FILE);
+		String inFolderPath = cmd.getOptionValue(OPT_INPUT_FOLDER);
 		String outPath = cmd.getOptionValue(OPT_OUTPUT_FILE);
 		String type = cmd.getOptionValue(OPT_TYPE);
 
 		FileProcessor processor;
 		if (!StringUtils.isEmpty(type) && type.contentEquals("cfs")) {
-			processor = new CFSFileProcessor(inPath, outPath, cmd);
+			processor = new CFSFileProcessor(inFolderPath, outPath, cmd);
 		} else {
 			processor = new GEOScanFileProcessor(inPath, outPath, cmd);
 		}
@@ -64,8 +66,14 @@ public final class MigrationFileBuilder {
 				.withArgName("FILE")
 				.withDescription("GEOScan export file")
 				.hasArg()
-				.isRequired()
 				.create(OPT_INPUT_FILE));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("folder")
+				.withArgName("FOLDER")
+				.withDescription("GEOScan export file")
+				.hasArg()
+				.create(OPT_INPUT_FOLDER));
 
 		options.addOption(
 				OptionBuilder.withLongOpt("output")
