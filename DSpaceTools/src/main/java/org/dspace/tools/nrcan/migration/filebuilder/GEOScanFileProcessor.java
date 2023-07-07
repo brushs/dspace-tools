@@ -75,6 +75,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> existingMonoCorpAuthorCodes = new HashSet<String>();
 	private Set<String> existingCorpAuthorCodes = new HashSet<String>();
 	private Set<String> existingPublisherCodes = new HashSet<String>();
+	private Set<String> existingAreaCodes = new HashSet<String>();
 	private List<String> bBoxes = new ArrayList<String>();
 	
 	private static final String VALUE = "##VALUE##";
@@ -345,6 +346,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				existingMonoCorpAuthorCodes = new HashSet<String>();
 				existingCorpAuthorCodes = new HashSet<String>();
 				existingPublisherCodes = new HashSet<String>();
+				existingAreaCodes = new HashSet<String>();
 				bBoxes = new ArrayList<String>();
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
@@ -646,7 +648,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 					value = getElementFundingLegacy(line);
 					if (value == null) {
 						return;
-					}				
+					}
+					value = replaceAmp(value);
+					value = replaceLTGT(value);
 					language = getElementFundingLegacyLang(line);
 					element = ELEMENT_FUNDING_LEGACY;
 				} else {
@@ -866,6 +870,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 			break;
 		case ELEMENT_AREA :
 			value = getElementGeneric(line);
+			if (existingAreaCodes.contains(value)) {
+				return;
+			} else {
+				existingAreaCodes.add(value);
+			}
 			break;
 		case ELEMENT_DIVISION :
 			value = getElementDivision(line);
