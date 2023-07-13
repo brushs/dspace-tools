@@ -14,6 +14,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.dspace.tools.nrcan.FileProcessor;
 
 public final class MigrationFileBuilder {
+	
+	private final static char OPT_MAP_FILE = 'm';
+	private final static char OPT_REL_FILE = 'r';
+	private final static char OPT_PLACE_FILE = 'p';
 	private final static char OPT_INPUT_FILE = 'f';
 	private final static char OPT_INPUT_FOLDER = 'd';
 	private final static char OPT_OUTPUT_FILE = 'o';
@@ -38,6 +42,9 @@ public final class MigrationFileBuilder {
 	}
 	
 	private static void processFile(CommandLine cmd) {
+		String mapPath = cmd.getOptionValue(OPT_MAP_FILE);
+		String relPath = cmd.getOptionValue(OPT_REL_FILE);
+		String placePath = cmd.getOptionValue(OPT_PLACE_FILE);
 		String inPath = cmd.getOptionValue(OPT_INPUT_FILE);
 		String inFolderPath = cmd.getOptionValue(OPT_INPUT_FOLDER);
 		String outPath = cmd.getOptionValue(OPT_OUTPUT_FILE);
@@ -46,6 +53,10 @@ public final class MigrationFileBuilder {
 		FileProcessor processor;
 		if (!StringUtils.isEmpty(type) && type.contentEquals("cfs")) {
 			processor = new CFSFileProcessor(inFolderPath, outPath, cmd);
+		} else if (!StringUtils.isEmpty(type) && type.contentEquals("map")) {
+			processor = new GEOScanCleanupProcessor(mapPath, inPath, outPath, cmd);
+		} else if (!StringUtils.isEmpty(type) && type.contentEquals("rel")) {
+			processor = new GEOScanRelationshipCleanupProcessor(mapPath, relPath, placePath, inPath, outPath, cmd);
 		} else {
 			processor = new GEOScanFileProcessor(inPath, outPath, cmd);
 		}
@@ -60,6 +71,27 @@ public final class MigrationFileBuilder {
 	@SuppressWarnings("static-access")
 	public static Options getCliOptions() {
 		Options options = new Options();
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("file")
+				.withArgName("FILE")
+				.withDescription("Map file from DSpace")
+				.hasArg()
+				.create(OPT_MAP_FILE));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("file")
+				.withArgName("FILE")
+				.withDescription("Rel file from DSpace")
+				.hasArg()
+				.create(OPT_REL_FILE));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("file")
+				.withArgName("FILE")
+				.withDescription("Place file from DSpace")
+				.hasArg()
+				.create(OPT_PLACE_FILE));
 		
 		options.addOption(
 				OptionBuilder.withLongOpt("file")
