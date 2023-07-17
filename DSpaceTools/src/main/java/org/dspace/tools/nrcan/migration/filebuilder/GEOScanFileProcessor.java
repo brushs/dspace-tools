@@ -937,6 +937,10 @@ public class GEOScanFileProcessor implements FileProcessor {
 			//
 		};
 		
+		if (element.contentEquals(ELEMENT_AUTHOR_A)) {
+			return;
+		}
+		
 		Relationship rel = relationshipElements.get(element);
 		
 		String output = "relationship." + rel.getName() + " " + rel.getAttribute() + ":" + value;
