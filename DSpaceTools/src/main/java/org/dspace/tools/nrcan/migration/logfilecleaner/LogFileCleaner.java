@@ -21,6 +21,7 @@ public final class LogFileCleaner {
 	private final static char OPT_INPUT_FILE = 'f';
 	private final static char OPT_OUTPUT_FILE = 'o';
 	private final static char OPT_COMBINE_FILES = 'c';
+	private final static char OPT_COMBINE_CFS_FILES = 'z';
 	
 	public static final void main(String[] args) throws IOException {
 		CommandLineParser parser = new PosixParser();
@@ -39,6 +40,8 @@ public final class LogFileCleaner {
 
 		if (!StringUtils.isEmpty(cmd.getOptionValue(OPT_COMBINE_FILES))) {
 			combine(cmd);
+		} else if (!StringUtils.isEmpty(cmd.getOptionValue(OPT_COMBINE_CFS_FILES))) {
+			combineCFS(cmd);
 		} else {
 			processFile(cmd);
 		}
@@ -95,6 +98,57 @@ public final class LogFileCleaner {
         " in directory " + dir.getName() + " Completed");
 	}
 	
+	private static void combineCFS(CommandLine cmd) throws IOException {
+        // create instance of directory
+        File dir = new File(cmd.getOptionValue(OPT_INPUT_FILE));
+ 
+        // create object of PrintWriter for output file
+        PrintWriter pw = new PrintWriter(cmd.getOptionValue(OPT_OUTPUT_FILE));
+ 
+        // Get list of all the files in form of String Array
+        String[] fileNames = dir.list();
+ 
+        pw.print("{\"data\":[");
+        
+        boolean first = true;
+        
+        // loop for reading the contents of all the files
+        // in the directory GeeksForGeeks
+        for (String fileName : fileNames) {
+            System.out.println("Reading from " + fileName);
+ 
+            // create instance of file from Name of
+            // the file stored in string Array
+            File f = new File(dir, fileName);
+ 
+            // create object of BufferedReader
+            BufferedReader br = new BufferedReader(new FileReader(f));
+            
+            // Read from current file
+            String line = br.readLine();
+            while (line != null) {
+            	line = line.substring(9);
+            	int index = line.indexOf("],\"meta\"");
+            	line = line.substring(0,index);
+            	if (!first) {
+            		line =  "," + line;
+            	}            	
+                // write to the output file
+                pw.print(line);
+                line = br.readLine();
+                first = false;
+            }
+            pw.flush();
+        }
+
+        pw.print("]}");
+        pw.flush();
+        System.out.println("Reading from all files" +
+        " in directory " + dir.getName() + " Completed");
+        
+	}
+
+	
 	@SuppressWarnings("static-access")
 	public static Options getCliOptions() {
 		Options options = new Options();
@@ -120,6 +174,13 @@ public final class LogFileCleaner {
 				.withDescription("Output file (default, STDOUT)")
 				.hasArg()
 				.create(OPT_COMBINE_FILES));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("combine CFS")
+				.withArgName("FILE")
+				.withDescription("Output file (default, STDOUT)")
+				.hasArg()
+				.create(OPT_COMBINE_CFS_FILES));
 
 		return options;
 	}

@@ -1,9 +1,12 @@
 package org.dspace.tools.nrcan.migration.filebuilder;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -179,6 +182,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_DIVISION_CFS = "divisionCFS";
 	private static final String ELEMENT_JOURNAL_CFS = "journalCFS";
 	private static final String ELEMENT_IDENTIFIER_CFS = "identifierCFS";
+	private static final String ELEMENT_CFS = "cfs";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -330,12 +334,16 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 		
 		// Content
-		if (input.getAvailability().getPdf_download().contentEquals("1") || 
-				input.getAvailability().getPdf_email().contentEquals("1")) {
+		if (input.getAvailability().getPdf_download().contentEquals("1")) {
 			processContent(input.getUid());
 		}
 		
-		// Content
+		// Email download
+		if (input.getAvailability().getPdf_email().contentEquals("1")) {
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_CFS), "Y", null, null);
+		}
+		
+		// Thumbnail
 		if (!input.getCover().contentEquals("false")) {
 			processThumbnail(input.getCover());
 		}
@@ -656,6 +664,7 @@ public class CFSFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_CLASSIFICATION, "<dcvalue element=\"legacy\" qualifier=\"classification\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_DURATION, "<dcvalue element=\"legacy\" qualifier=\"duration\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_POLYGON_WENS, "<dcvalue element=\"legacy\" qualifier=\"bbox\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CFS, "<dcvalue element=\"cfs\" qualifier=\"emailpdf\">" + VALUE + "</dcvalue>");
 					
 		relationshipElements = new HashMap<String, Relationship>();
 		
@@ -694,7 +703,9 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 	
 	private String replaceAmp(String value) {
-		value = value.replace("&","&amp;");
+		if (value != null) {
+			value = value.replace("&","&amp;");
+		}
 		return value;
 	}
 
@@ -731,4 +742,5 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		return false;
 	}
+	
 }

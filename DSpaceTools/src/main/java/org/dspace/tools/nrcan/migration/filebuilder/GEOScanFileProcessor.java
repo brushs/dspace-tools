@@ -733,6 +733,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_SEC_SERIAL_NUMBER :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				element = ELEMENT_SEC_SERIAL_NUMBER + secSerials.get(++secSerialNumberCount);
 				if (element.contentEquals("secserialnumbernull")) {
 					System.out.println("GID: " + geoScanId + " - Too many serials or no serial code");
