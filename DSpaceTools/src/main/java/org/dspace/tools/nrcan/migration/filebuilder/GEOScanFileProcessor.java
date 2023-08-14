@@ -651,6 +651,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 					}
 					value = replaceAmp(value);
 					value = replaceLTGT(value);
+					value = replaceFundingLTGT(value);
 					language = getElementFundingLegacyLang(line);
 					element = ELEMENT_FUNDING_LEGACY;
 				} else {
@@ -668,6 +669,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			case ELEMENT_MEETING_CITY :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_MEETING_COUNTRY :
 				value = getElementGeneric(line);
@@ -724,6 +726,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_RELATION_ERRATUM :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_CLASSIFICATION :
 				value = getElementGeneric(line);
@@ -1619,6 +1622,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String replaceLTGT(String value) {
 		value = value.replace("&amp;lt;", "&lt;");
 		value = value.replace("&amp;gt;", "&gt;");
+		return value;
+	}
+	
+	private String replaceFundingLTGT(String value) {
+		value = value.replace("<", "");
+		value = value.replace(">", "");
 		return value;
 	}
 	
