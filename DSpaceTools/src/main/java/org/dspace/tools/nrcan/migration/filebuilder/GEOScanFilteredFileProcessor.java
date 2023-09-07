@@ -3,7 +3,6 @@ package org.dspace.tools.nrcan.migration.filebuilder;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -31,28 +30,19 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
 import org.dspace.tools.nrcan.FileProcessor;
 
-public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
+public class GEOScanFilteredFileProcessor implements FileProcessor {
 
 	private FileInputStream inputStream;
 	private BufferedReader streamReader;
-	private FileInputStream mapInputStream;
-	private BufferedReader mapStreamReader;
-	private FileInputStream relInputStream;
-	private BufferedReader relStreamReader;
-	private FileInputStream placeInputStream;
-	private BufferedReader placeStreamReader;
-	private PrintStream mappedOutputStream;
 	private String inPath;
 	private String outPath;
-	private String mapPath;
-	private String relPath;
-	private String placePath;
 	private int itemCount = 0;
 	private int archiveCount = 0;
 	private int archiveSize = 100;
 	private String currentArchivePath;
 	private String currentItemPath;
 	private String bibLevel;
+	private String path;
 	private boolean filesOpen = false;
 	private boolean beforeFirstItem = true;
 	private PrintStream contentsFileStream;
@@ -88,10 +78,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 	private Set<String> existingPublisherCodes = new HashSet<String>();
 	private Set<String> existingAreaCodes = new HashSet<String>();
 	private List<String> bBoxes = new ArrayList<String>();
-	private Map<String, String> gidMap = new HashMap<String, String>();
-	private Map<String, String> relMap = new HashMap<String, String>();
-	private Map<String, Integer> placeMap = new HashMap<String, Integer>();
-	private Integer itemPlace = 0;
+	private List<Integer> gidList = new ArrayList<Integer>();
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -242,33 +229,19 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_COUNTRY_CODE = "nrcan.country.code";
 	
-	public GEOScanRelationshipCleanupProcessor(String mapPath, String relPath, String placePath, String inPath, String outPath, CommandLine cmd) {
+	public GEOScanFilteredFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
 		this.outPath = outPath;
-		this.mapPath = mapPath;
-		this.relPath = relPath;
-		this.placePath = placePath;
 	}
 	
 	public void process() {
 		try {
-			
-			// GID to DSpace Object ID of Item
-			readMapFile();
-			System.out.println("GID map read");
-			// Text of Entity to DSpace Object ID of Config Entity
-			readRelFile();
-			System.out.println("Config Entity map read");
-			// DSpace Object ID of Config Entity to Place Num
-			readPlaceFile();
-			System.out.println("Place map read");
-			initializeRelationships();
-			System.out.println("Relationships initialized");
+			initializeElementTemplates();
 			
 			inputStream = new FileInputStream(inPath);
 			streamReader = new BufferedReader(new InputStreamReader(inputStream));
 	
-			mappedOutputStream = getPrintStream(outPath + "/output.csv");
+			initGIDList();
 			
 			String line = streamReader.readLine();
 			String nextLine;
@@ -301,6 +274,16 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				line = nextLine;
 			}
 			
+			if (itemCount != archiveSize) {
+				String directory = outPath + "\\" + currentArchivePath + "\\";
+				String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
+				ZipDirectory.zipDirectory(directory, filename);			
+			}
+			
+			for (String element : unknownElements) {
+				System.out.println("UNKNOWN ELEMENT: " + element);
+			}
+			
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -311,98 +294,19 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		}		
 	}
 	
-	private void readMapFile() throws IOException {
-		try {
-			mapInputStream = new FileInputStream(mapPath);
-			mapStreamReader = new BufferedReader(new InputStreamReader(mapInputStream));
-			
-			String line = mapStreamReader.readLine();
-			
-			while(line != null) {
-				processMapFileLine(line);
-				line = mapStreamReader.readLine();;
-			}
-			
-		} catch(Exception ex) {
-			System.out.println(ex);
-			throw new RuntimeException(ex.getMessage(), ex);
-		}
-
-	}
-
-	private void processMapFileLine(String line) throws IOException {
-		line = line.replace("\"", "");
-		String gid = line.substring(0, line.indexOf(","));
-		String id = line.substring(line.indexOf(",") + 1);
-		
-		gidMap.put(gid, id);
-	}
-	
-	private void readRelFile() throws IOException {
-		try {
-			relInputStream = new FileInputStream(relPath);
-			relStreamReader = new BufferedReader(new InputStreamReader(relInputStream));
-			
-			String line = relStreamReader.readLine();
-			
-			while(line != null) {
-				processRelFileLine(line);
-				line = relStreamReader.readLine();;
-			}
-			
-		} catch(Exception ex) {
-			System.out.println(ex);
-			throw new RuntimeException(ex.getMessage(), ex);
-		}
-
-	}
-
-	private void processRelFileLine(String line) throws IOException {
-		line = line.replace("\"", "");
-		String id = line.substring(0, line.indexOf(","));
-		String text = line.substring(line.indexOf(",") + 1);
-		
-		relMap.put(text, id);
-	}
-	
-	private void readPlaceFile() throws IOException {
-		try {
-			placeInputStream = new FileInputStream(placePath);
-			placeStreamReader = new BufferedReader(new InputStreamReader(placeInputStream));
-			
-			String line = placeStreamReader.readLine();
-			
-			while(line != null) {
-				processPlaceFileLine(line);
-				line = placeStreamReader.readLine();;
-			}
-			
-		} catch(Exception ex) {
-			System.out.println(ex);
-			throw new RuntimeException(ex.getMessage(), ex);
-		}
-
-	}
-
-	private void processPlaceFileLine(String line) throws IOException {
-		line = line.replace("\"", "");
-		String id = line.substring(0, line.indexOf(","));
-		int place = Integer.parseInt(line.substring(line.indexOf(",") + 1));
-		
-		placeMap.put(id, place);
-	}
-	
 	@Override
 	public void close() {
 		try {
-			placeStreamReader.close();
-			placeInputStream.close();	
-			relStreamReader.close();
-			relInputStream.close();	
-			mapStreamReader.close();
-			mapInputStream.close();	
 			streamReader.close();
 			inputStream.close();
+			
+			if (filesOpen) {
+				closeOutputFiles();
+			}
+			
+			for (String s : valueSet) {
+				System.out.println(s);
+			}
 			
 		}
 		catch(IOException ex) {
@@ -448,16 +352,48 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				existingPublisherCodes = new HashSet<String>();
 				existingAreaCodes = new HashSet<String>();
 				bBoxes = new ArrayList<String>();
-				itemPlace = 0;
+				
+				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
+					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
+					itemCount = 0;
+				}
+				
+				currentItemPath = "item_" + String.format("%03d" , itemCount);
+				
+				path = outPath + "\\" + currentArchivePath + "\\" + currentItemPath;
+				//System.out.println("PATH: " + path);
+				
+				createDirectory(path);
+				openNewOutputFiles(path);
+				filesOpen = true;
 				beforeFirstItem = false;
+				return;
+			}
+			
+			if (StringUtils.trim(input).substring(0, Math.min(7, input.length())).equals("</item>")) {
+				printBBox();
+				printDateIssued();
+				closeOutputFiles();
+				filesOpen = false;
+				
+				if (itemCount == archiveSize) {
+					String directory = outPath + "\\" + currentArchivePath + "\\";
+					String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
+					ZipDirectory.zipDirectory(directory, filename);			
+				}
+				
+				if (!gidList.contains(Integer.parseInt(geoScanId))) {
+					deleteDirectory(path);
+				} else {
+					itemCount++;
+				}
 				
 				return;
 			}
 			
 			if (!beforeFirstItem) {
 				processMetadata(input);
-			}
-			
+			}	
 		} catch (Exception e) {
 			throw e;
 		}
@@ -470,57 +406,24 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		String element = line.substring(1, 
 				Math.min(indexOfGT < 0 ? line.length()-1 : indexOfGT, indexOfSpace < 0 ? line.length()-1 : indexOfSpace));
 		
-		String output = processElement(element.toLowerCase(), line);
-		if (StringUtils.isEmpty(output)) {
-			return;
-		}
-		
-		element = output.substring(0, output.indexOf("*"));
-		String value = output.substring(output.indexOf("*") + 1);
-		
-		if (StringUtils.isEmpty(value)) {
-			return;
-		}
-		
-		if (element.contentEquals(ELEMENT_AUTHOR_A)) {
-			if (gidMap.containsKey(geoScanId)) {
-				String objectId = gidMap.get(geoScanId);
-				String relatedObjectId = relMap.get(value);
-				
-				if (relatedObjectId == null) {
-					String newValue = value.substring(0, value.lastIndexOf("_") + 1);
-					relatedObjectId = relMap.get(newValue);
-					if (relatedObjectId == null) {
-						System.out.println("ERROR: " + value + " not found - ID: " + objectId);
-					}
-				}
-
-				Integer place = placeMap.get(relatedObjectId);
-				if (place == null) {
-					place = 0;
-				} else {
-					place++;
-				}
-				mappedOutputStream.println(objectId + "," + relatedObjectId + "," + itemPlace + "," + place);
-				
-				itemPlace++;
-				placeMap.put(relatedObjectId, place);
-			}			
-		}		
-		
+		processElement(element.toLowerCase(), line);
 	}
 	
-	private String processElement(String element, String line) throws Exception {
+	private void processElement(String element, String line) throws Exception {
 		
-		String value = "";
+		if (element.contentEquals(ELEMENT_CONTENT)) {
+			processContent(element, line);
+			return;
+		}
 		
 		if (relationshipElements.containsKey(element)) {
-			value = processRelationship(element, line);
+			processRelationship(element, line);
 			if (!element.contentEquals(ELEMENT_FUNDING)) {
-				return value;
+				return;
 			}		
 		}
 		
+		String value = "";
 		String language = "";
 		String qualifier = "";
 		
@@ -641,7 +544,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				if (containsNumber(value)) {
 					bBoxes.add(value);
 				}		
-				break;
+				return;
 			case ELEMENT_POLYGON_DEG :
 				value = getElementGeneric(line);
 				break;
@@ -693,7 +596,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			case ELEMENT_BIBLIOGRAPHIC_LEVEL :
 				value = getElementGeneric(line);
 				bibLevel = value;
-				break;
+				return;
 			case ELEMENT_SUBJECT_DESCRIPTOR :
 				value = getElementGeneric(line);
 				value = replaceAmp(value);
@@ -701,7 +604,8 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			case ELEMENT_IMAGE :
 				value = getElementGeneric(line);
 				value = StringEscapeUtils.escapeXml(value);
-				break;
+				processThumbnail(element, line);
+				return;
 			case ELEMENT_SUBJECT_GEOSCAN :
 				value = getElementGeneric(line);
 				value = replaceAmp(value);
@@ -753,14 +657,15 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				if (value == null) {
 					value = getElementFundingLegacy(line);
 					if (value == null) {
-						break;
+						return;
 					}
 					value = replaceAmp(value);
 					value = replaceLTGT(value);
+					value = replaceFundingLTGT(value);
 					language = getElementFundingLegacyLang(line);
 					element = ELEMENT_FUNDING_LEGACY;
 				} else {
-					break;
+					return;
 				}
 				break;
 			case ELEMENT_MEETING_NAME :
@@ -771,9 +676,10 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			case ELEMENT_MEETING_DATE :
 				value = getElementGeneric(line);
 				handleMeetingDate(value);
-				break;
+				return;
 			case ELEMENT_MEETING_CITY :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_MEETING_COUNTRY :
 				value = getElementGeneric(line);
@@ -793,7 +699,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				break;
 			case ELEMENT_DATE :
 				dateIssued = getElementGeneric(line);
-				break;
+				return;
 			case ELEMENT_DATE_SUBMITTED :			
 				if (firstDateSubmitted) {
 					firstDateSubmitted = false;
@@ -823,13 +729,14 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				break;
 			case ELEMENT_RELATION_PHOTO :
 				handleRelationPhotoElement(getElementGeneric(line));
-				break;
+				return;
 			case ELEMENT_REPORT_NUMBER :
 				value = getElementGeneric(line);
 				value = replaceAmp(value);
 				break;
 			case ELEMENT_RELATION_ERRATUM :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				break;
 			case ELEMENT_CLASSIFICATION :
 				value = getElementGeneric(line);
@@ -839,21 +746,80 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				break;
 			case ELEMENT_SEC_SERIAL_NUMBER :
 				value = getElementGeneric(line);
+				value = replaceAmp(value);
 				element = ELEMENT_SEC_SERIAL_NUMBER + secSerials.get(++secSerialNumberCount);
 				if (element.contentEquals("secserialnumbernull")) {
-					break;
+					System.out.println("GID: " + geoScanId + " - Too many serials or no serial code");
+					return;
 				}
 				break;
 			default :
 				unknownElements.add(element);
-				break;
+				return;
 		};
 		
-		return element + "* " + value;
+		boolean isDCElement = true;
+		boolean isGeospatialElement = true;
+		String template = dcElementTemplates.get(element);
+		if (StringUtils.isEmpty(template)) {
+			isDCElement = false;
+			template = geospatialElementTemplates.get(element);
+			if (StringUtils.isEmpty(template)) {
+				isGeospatialElement = false;
+				template = nrcanElementTemplates.get(element);
+			}
+		}
+		
+		try {
+			template = template.replace(VALUE, value);
+		} catch (Exception e) {
+			unknownElements.add(element);
+			if (element.contentEquals("fundinglegacy")) {
+				unknownElements.add(element);
+			}
+			return;
+		}
+		
+		template = template.replace(LANGUAGE, language);
+		template = template.replace(QUALIFIER, qualifier);
+		
+		if (isDCElement) {
+			dublinCoreFileStream.println(template);
+		} else if (isGeospatialElement) {
+			geospatialFileStream.println(template);
+		} else {
+			nrcanFileStream.println(template);
+		}
 		
 	}
 	
-	private String processRelationship(String element, String line) {
+	private void processContent(String element, String line) {
+		
+		String value = getElementGeneric(line);
+
+		value = "STPublications_PublicationsST/" + value;
+		
+		value = value.replace("//","/");
+		
+		String output = "-r -s 0 -f " + value;
+		
+		contentsFileStream.println(output);
+	}
+	
+	private void processThumbnail(String element, String line) {
+		
+		String value = getElementGeneric(line);
+		
+		value = "thumbnails" + value.substring(value.lastIndexOf("/"));
+
+		String output = "-r -s 2 -f " + value;
+		
+		output = output + "\tbundle:THUMBNAIL";
+		
+		contentsFileStream.println(output);
+	}
+	
+	private void processRelationship(String element, String line) {
 		
 		String value = "";
 		switch (element) {
@@ -868,7 +834,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			value = value.toUpperCase();
 			if (existingPublisherCodes.contains(value)) {
 				System.out.println("GID: " + geoScanId + " - Duplicate Publishers?");
-				break;
+				return;
 			} else {
 				existingPublisherCodes.add(value);
 			}
@@ -877,7 +843,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			value = getAuthorMigrationId(line);
 			if (existingAuthorACodes.contains(value)) {
 				System.out.println("GID: " + geoScanId + " - Duplicate Authors?");
-				break;
+				return;
 			} else {
 				existingAuthorACodes.add(value);
 			}
@@ -886,7 +852,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			value = getAuthorMigrationId(line);
 			if (existingAuthorCodes.contains(value)) {
 				System.out.println("GID: " + geoScanId + " - Duplicate Authors?");
-				break;
+				return;
 			} else {
 				existingAuthorCodes.add(value);
 			}
@@ -897,21 +863,21 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		case ELEMENT_COUNTRY :
 			value = getElementGeneric(line);
 			if (existingCountryCodes.contains(value)) {
-				break;
+				return;
 			} else {
 				existingCountryCodes.add(value);
 			}
 			if (value.contentEquals("Canada")) {
-				break;
+				return;
 			}
 			break;
 		case ELEMENT_PROVINCE :
 			value = getElementGeneric(line);
 			if (value.contentEquals("can")) {
-				break;
+				return;
 			}
 			if (existingProvinceCodes.contains(value)) {
-				break;
+				return;
 			} else {
 				existingProvinceCodes.add(value);
 			}
@@ -919,7 +885,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		case ELEMENT_AREA :
 			value = getElementGeneric(line);
 			if (existingAreaCodes.contains(value)) {
-				return "";
+				return;
 			} else {
 				existingAreaCodes.add(value);
 			}
@@ -927,7 +893,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		case ELEMENT_DIVISION :
 			value = getElementDivision(line);
 			if (existingDivisionCodes.contains(value)) {
-				break;
+				return;
 			} else {
 				existingDivisionCodes.add(value);
 			}
@@ -937,7 +903,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			value = replaceAmp(value);
 			if (existingCorpAuthorCodes.contains(value)) {
 				System.out.println("GID: " + geoScanId + " - Duplicate Corp Authors?");
-				break;
+				return;
 			} else {
 				existingCorpAuthorCodes.add(value);
 			}
@@ -949,14 +915,14 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				element = ELEMENT_CORP_AUTHOR_A;
 				if (existingCorpAuthorCodes.contains(value)) {
 					System.out.println("GID: " + geoScanId + " - Duplicate Corp Authors?");
-					break;
+					return;
 				} else {
 					existingCorpAuthorCodes.add(value);
 				}
 			} else {							
 				if (existingMonoCorpAuthorCodes.contains(value)) {
 					System.out.println("GID: " + geoScanId + " - Duplicate Mono Corp Authors?");
-					break;
+					return;
 				} else {
 					existingMonoCorpAuthorCodes.add(value);
 				}
@@ -965,7 +931,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		case ELEMENT_FUNDING :
 			value = getElementFundingCode(line);
 			if (value == null || existingFundingCodes.contains(value)) {
-				break;
+				return;
 			} else {
 				existingFundingCodes.add(value);
 			}
@@ -978,14 +944,214 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				secSerials.put(secSerialCount, ++uniqueSecSerialCount);			
 			} else {
 				secSerials.put(secSerialCount, uniqueSecSerialCount);
-				break;
+				return;
 			}
 			break;
 		default :
 			//
 		};
 		
-		return element + "*" + value;
+		if (element.contentEquals(ELEMENT_AUTHOR_A)) {
+			return;
+		}
+		
+		Relationship rel = relationshipElements.get(element);
+		
+		String output = "relationship." + rel.getName() + " " + rel.getAttribute() + ":" + value;
+		
+		relationshipsFileStream.println(output);
+	}
+	
+	private void createDirectory(String path) {
+		File theDir = new File(path);
+		if (!theDir.exists()){
+		    theDir.mkdirs();
+		}
+	}
+	
+	private void deleteDirectory(String path) {
+		File theDir = new File(path);
+		if (theDir.exists()){
+		    theDir.delete();
+		}
+	}
+	
+	private void openNewOutputFiles(String path) throws UnsupportedEncodingException {
+		contentsFileStream = getPrintStream(path + "\\contents");
+		relationshipsFileStream = getPrintStream(path + "\\relationships");
+		dublinCoreFileStream = getPrintStream(path + "\\dublin_core.xml");
+		dspaceFileStream = getPrintStream(path + "\\metadata_dspace.xml");
+		nrcanFileStream = getPrintStream(path + "\\metadata_nrcan.xml");
+		geospatialFileStream = getPrintStream(path + "\\metadata_geospatial.xml");
+		
+		initializeDSpaceFile();
+		initializeDublinCoreFile();
+		initializeNRCanFile();
+		initializeGeospatialFile();
+	}
+	
+	private void closeOutputFiles() {
+		finalizeXmlFile(dublinCoreFileStream);
+		finalizeXmlFile(nrcanFileStream);
+		finalizeXmlFile(geospatialFileStream);
+		
+		contentsFileStream.close();
+		relationshipsFileStream.close();
+		dublinCoreFileStream.close();
+		dspaceFileStream.close();
+		nrcanFileStream.close();
+		geospatialFileStream.close();
+	}
+	
+	private void finalizeXmlFile(PrintStream printStream) {
+		printStream.println("</dublin_core>");
+	}
+	
+	private void initializeDSpaceFile() {
+		dspaceFileStream.println("<dublin_core schema=\"dspace\">");
+		dspaceFileStream.println("<dcvalue element=\"entity\" qualifier=\"type\">Publication</dcvalue>");
+		dspaceFileStream.println("</dublin_core>");
+	}
+	
+	private void initializeDublinCoreFile() {
+		dublinCoreFileStream.println("<dublin_core>");
+	}
+
+	private void initializeNRCanFile() {
+		nrcanFileStream.println("<dublin_core schema=\"nrcan\">");
+	}
+	
+	private void initializeGeospatialFile() {
+		geospatialFileStream.println("<dublin_core schema=\"geospatial\">");
+	}
+	
+	private void initializeElementTemplates() {
+		dcElementTemplates = new HashMap<String, String>();
+		
+		dcElementTemplates.put(ELEMENT_TITLE_A, "<dcvalue element=\"title\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_IDENTIFIER, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_E, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_ABSTRACT, "<dcvalue element=\"description\" qualifier=\"abstract\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_TYPE, "<dcvalue element=\"type\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_DESCRIPTOR, "<dcvalue element=\"subject\" qualifier=\"descriptor\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_GEOSCAN, "<dcvalue element=\"subject\" qualifier=\"geoscan\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_BROAD, "<dcvalue element=\"subject\" qualifier=\"broad\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_GC, "<dcvalue element=\"subject\" qualifier=\"gc\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_OTHER, "<dcvalue element=\"subject\" qualifier=\"other\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RECORD_CREATED, "<dcvalue element=\"description\" qualifier=\"provenance\"  language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_DATE_ISSUED, "<dcvalue element=\"date\" qualifier=\"issued\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_DATE_AVAILABLE, "<dcvalue element=\"date\" qualifier=\"available\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_DATE_UPDATED, "<dcvalue element=\"date\" qualifier=\"updated\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_DATE_SUBMITTED, "<dcvalue element=\"description\" qualifier=\"provenance\"  language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_REPLACES, "<dcvalue element=\"relation\" qualifier=\"replaces\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ACCOMPANIES, "<dcvalue element=\"relation\" qualifier=\"accompanies\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPLACEDBY, "<dcvalue element=\"relation\" qualifier=\"isreplacedby\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISRELATEDTO, "<dcvalue element=\"relation\" qualifier=\"isrelatedto\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISPARTOF, "<dcvalue element=\"relation\" qualifier=\"ispartof\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISACCOMPANIEDBY, "<dcvalue element=\"relation\" qualifier=\"isaccompaniedby\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_CONTAINS, "<dcvalue element=\"relation\" qualifier=\"contains\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISENLARGEDFROM, "<dcvalue element=\"relation\" qualifier=\"isenlargedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREDUCEDFROM, "<dcvalue element=\"relation\" qualifier=\"isreducedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISTRANSLATIONOF, "<dcvalue element=\"relation\" qualifier=\"istranslationof\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDFROM, "<dcvalue element=\"relation\" qualifier=\"isreprintedfrom\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDIN, "<dcvalue element=\"relation\" qualifier=\"isreprintedin\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_RELATION_TBD, "<dcvalue element=\"relation\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		
+		nrcanElementTemplates = new HashMap<String, String>();
+		
+		nrcanElementTemplates.put(ELEMENT_VOLUME, "<dcvalue element=\"volume\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ISSUE, "<dcvalue element=\"issue\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_OPEN_ACCESS, "<dcvalue element=\"openaccess\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CONTRIBUTOR, "<dcvalue element=\"sourcesystem\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_NTS, "<dcvalue element=\"nts\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_PAGE_RANGE, "<dcvalue element=\"pagination\" qualifier=\"pagerange\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_TOTAL_PAGES, "<dcvalue element=\"pagination\" qualifier=\"totalpages\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_TOTAL_SHEETS, "<dcvalue element=\"pagination\" qualifier=\"totalsheets\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_FILE_TYPE, "<dcvalue element=\"filetype\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEDIA, "<dcvalue element=\"media\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_AREA_TEXT, "<dcvalue element=\"area\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_LANGUAGE_ABSTRACT, "<dcvalue element=\"abstract\" qualifier=\"language\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ONLINE_URL, "<dcvalue element=\"publication\" qualifier=\"externalurl\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SUMMARY, "<dcvalue element=\"summary\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_NOTES, "<dcvalue element=\"notes\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DOCTYPE, "<dcvalue element=\"legacy\" qualifier=\"doctype\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLICY_PAAE, "<dcvalue element=\"policy\" qualifier=\"paae\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLICY_IMPLICATION_E, "<dcvalue element=\"policy\" qualifier=\"implication\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLICY_IMPLICATION_F, "<dcvalue element=\"policy\" qualifier=\"implication\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLICY_RELEVANCE_E, "<dcvalue element=\"policy\" qualifier=\"relevance\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLICY_RELEVANCE_F, "<dcvalue element=\"policy\" qualifier=\"relevance\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_GEOP_SURVEY, "<dcvalue element=\"geopsurvey\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_GEOGRAPHY, "<dcvalue element=\"geography\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_WEB_ACCESSIBLE, "<dcvalue element=\"legacy\" qualifier=\"webaccessible\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_EDITION, "<dcvalue element=\"edition\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION_REF, "<dcvalue element=\"legacy\" qualifier=\"relationref\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ARTICLE_NUMBER, "<dcvalue element=\"articlenumber\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_README_E, "<dcvalue element=\"readme\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_README_F, "<dcvalue element=\"readme\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_THESIS, "<dcvalue element=\"legacy\" qualifier=\"thesis\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_NUMBER_OF_MAPS, "<dcvalue element=\"map\" qualifier=\"numberofmaps\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_TITLE_M, "<dcvalue element=\"monographic\" qualifier=\"title\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CONT_DESCR, "<dcvalue element=\"legacy\" qualifier=\"contdescr\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DOWNLOAD, "<dcvalue element=\"legacy\" qualifier=\"download\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ARCHIVAL_FILE, "<dcvalue element=\"legacy\" qualifier=\"archivalfile\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MAP, "<dcvalue element=\"map\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_FUNDING_LEGACY, "<dcvalue element=\"legacy\" qualifier=\"sponsor\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_NAME, "<dcvalue element=\"meeting\" qualifier=\"name\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_CITY, "<dcvalue element=\"meeting\" qualifier=\"city\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_COUNTRY, "<dcvalue element=\"meeting\" qualifier=\"country\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_ALTERNATE_FORMAT, "<dcvalue element=\"legacy\" qualifier=\"alternateformat\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_PRINT_DATE, "<dcvalue element=\"legacy\" qualifier=\"printdate\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION_URL, "<dcvalue element=\"legacy\" qualifier=\"relationurl\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION, "<dcvalue element=\"legacy\" qualifier=\"relation\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION_PHOTO, "<dcvalue element=\"legacy\" qualifier=\"relationphoto\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_START, "<dcvalue element=\"meeting\" qualifier=\"startdate\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_END, "<dcvalue element=\"meeting\" qualifier=\"enddate\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DIGITAL, "<dcvalue element=\"legacy\" qualifier=\"mapdigital\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_IS_OR_HAS_MAP, "<dcvalue element=\"legacy\" qualifier=\"isorhasmap\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CONTAINS_MAP, "<dcvalue element=\"legacy\" qualifier=\"map\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_REPORT_NUMBER, "<dcvalue element=\"reportnumber\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER1, "<dcvalue element=\"secserial\" qualifier=\"0number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER2, "<dcvalue element=\"secserial\" qualifier=\"1number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER3, "<dcvalue element=\"secserial\" qualifier=\"2number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER4, "<dcvalue element=\"secserial\" qualifier=\"3number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER5, "<dcvalue element=\"secserial\" qualifier=\"4number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DATE_RECORD_SENT, "<dcvalue element=\"legacy\" qualifier=\"daterecordsent\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RECORD_MODIFIED, "<dcvalue element=\"legacy\" qualifier=\"daterecordmod\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_PREVIOUS_FILENAME, "<dcvalue element=\"legacy\" qualifier=\"previousfilename\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_OPEN_ACCESS_TYPE, "<dcvalue element=\"legacy\" qualifier=\"openaccesstype\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_STATUS, "<dcvalue element=\"legacy\" qualifier=\"status\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_IMAGE, "<dcvalue element=\"legacy\" qualifier=\"thumbnail\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_RELATION_ERRATUM, "<dcvalue element=\"legacy\" qualifier=\"relationerratum\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_CLASSIFICATION, "<dcvalue element=\"legacy\" qualifier=\"classification\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_DURATION, "<dcvalue element=\"legacy\" qualifier=\"duration\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_POLYGON_WENS, "<dcvalue element=\"legacy\" qualifier=\"bbox\">" + VALUE + "</dcvalue>");
+					
+		relationshipElements = new HashMap<String, Relationship>();
+		
+		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
+		relationshipElements.put(ELEMENT_JOURNAL_CODE, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_JOURNAL_CODE));
+		relationshipElements.put(ELEMENT_AUTHOR_A, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_AUTHOR, ATTRIBUTE_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_PUB_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
+		relationshipElements.put(ELEMENT_COUNTRY_CANADA, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_COUNTRY_CODE));
+		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
+		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
+		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
+		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
+		
+		geospatialElementTemplates = new HashMap<String, String>();
+		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");
+		geospatialElementTemplates.put(ELEMENT_COVERAGE, "<dcvalue element=\"polygon\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		geospatialElementTemplates.put(ELEMENT_BBOX, "<dcvalue element=\"bbox\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		
+		ignoredElements.add(ELEMENT_BIBLIOGRAPHIC_LEVEL);
+		
 	}
 	
 	private void printDateIssued() throws Exception {
@@ -1273,9 +1439,6 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			try {
 				pos = line.indexOf("dpsid");
 				deptId = line.substring(pos + 6, line.indexOf("</dpsid"));
-				if (deptId.contains(";")) {
-					deptId = "";
-				}
 			} catch (Exception e) {
 				//
 			}
@@ -1317,7 +1480,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 				}
 			}
 		} catch (Exception e) {
-			//System.out.println("GID: " + geoScanId + " - Relation Photo: " + line);
+			System.out.println("GID: " + geoScanId + " - Relation Photo: " + line);
 		}
 	}
 	
@@ -1458,7 +1621,7 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 			nrcanFileStream.println(template);
 		
 		} catch (Exception e) {
-			//System.out.println("GID: " + geoScanId + " - Meeting Date: " + value);
+			System.out.println("GID: " + geoScanId + " - Meeting Date: " + value);
 		}
 	}
 	
@@ -1479,28 +1642,157 @@ public class GEOScanRelationshipCleanupProcessor implements FileProcessor {
 		return value;
 	}
 	
+	private String replaceFundingLTGT(String value) {
+		value = value.replace("<", "");
+		value = value.replace(">", "");
+		return value;
+	}
+	
 	private String replaceAmp(String value) {
 		value = value.replace("&","&amp;");
 		return value;
 	}
 	
-	private void initializeRelationships() {
-		relationshipElements = new HashMap<String, Relationship>();
-		
-		relationshipElements.put(ELEMENT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
-		relationshipElements.put(ELEMENT_JOURNAL_CODE, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_JOURNAL_CODE));
-		relationshipElements.put(ELEMENT_AUTHOR_A, new Relationship(RELATIONSHIP_AUTHOR, ATTRIBUTE_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_AUTHOR, ATTRIBUTE_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_PUBLISHER, new Relationship(RELATIONSHIP_PUBLISHER, ATTRIBUTE_PUB_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_A, new Relationship(RELATIONSHIP_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_CORP_AUTHOR_M, new Relationship(RELATIONSHIP_MONOGRAPHIC_CORP_AUTHOR, ATTRIBUTE_CA_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_COUNTRY, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_TITLE));
-		relationshipElements.put(ELEMENT_COUNTRY_CANADA, new Relationship(RELATIONSHIP_COUNTRY, ATTRIBUTE_COUNTRY_CODE));
-		relationshipElements.put(ELEMENT_PROVINCE, new Relationship(RELATIONSHIP_PROVINCE, ATTRIBUTE_PROVINCE_CODE));
-		relationshipElements.put(ELEMENT_AREA, new Relationship(RELATIONSHIP_AREA, ATTRIBUTE_AREA_MIGRATION_ID));
-		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
-		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
-		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
-		
+	private void initGIDList() {
+		gidList.add(328560);
+		gidList.add(328974);
+		gidList.add(330701);
+		gidList.add(330702);
+		gidList.add(330714);
+		gidList.add(120927);
+		gidList.add(123244);
+		gidList.add(302707);
+		gidList.add(308081);
+		gidList.add(322158);
+		gidList.add(328484);
+		gidList.add(126998);
+		gidList.add(126998);
+		gidList.add(127000);
+		gidList.add(127000);
+		gidList.add(127249);
+		gidList.add(127249);
+		gidList.add(127251);
+		gidList.add(127251);
+		gidList.add(127353);
+		gidList.add(127353);
+		gidList.add(129002);
+		gidList.add(129002);
+		gidList.add(129004);
+		gidList.add(129004);
+		gidList.add(131320);
+		gidList.add(131320);
+		gidList.add(132475);
+		gidList.add(132475);
+		gidList.add(132476);
+		gidList.add(132476);
+		gidList.add(132477);
+		gidList.add(132477);
+		gidList.add(133947);
+		gidList.add(133947);
+		gidList.add(133949);
+		gidList.add(133949);
+		gidList.add(221508);
+		gidList.add(221508);
+		gidList.add(129226);
+		gidList.add(130389);
+		gidList.add(330388);
+		gidList.add(330500);
+		gidList.add(331238);
+		gidList.add(331272);
+		gidList.add(331276);
+		gidList.add(331703);
+		gidList.add(130292);
+		gidList.add(130903);
+		gidList.add(221104);
+		gidList.add(292009);
+		gidList.add(293509);
+		gidList.add(293530);
+		gidList.add(302381);
+		gidList.add(328722);
+		gidList.add(331240);
+		gidList.add(331316);
+		gidList.add(331549);
+		gidList.add(331550);
+		gidList.add(331551);
+		gidList.add(331555);
+		gidList.add(331625);
+		gidList.add(331628);
+		gidList.add(331702);
+		gidList.add(331704);
+		gidList.add(331705);
+		gidList.add(331706);
+		gidList.add(248258);
+		gidList.add(184171);
+		gidList.add(184171);
+		gidList.add(184172);
+		gidList.add(184172);
+		gidList.add(184173);
+		gidList.add(184173);
+		gidList.add(184174);
+		gidList.add(184174);
+		gidList.add(184175);
+		gidList.add(184175);
+		gidList.add(184176);
+		gidList.add(184176);
+		gidList.add(184177);
+		gidList.add(184177);
+		gidList.add(184178);
+		gidList.add(184178);
+		gidList.add(184179);
+		gidList.add(184179);
+		gidList.add(184180);
+		gidList.add(184180);
+		gidList.add(184181);
+		gidList.add(184181);
+		gidList.add(184182);
+		gidList.add(184182);
+		gidList.add(184183);
+		gidList.add(184183);
+		gidList.add(184184);
+		gidList.add(184184);
+		gidList.add(184185);
+		gidList.add(184185);
+		gidList.add(184186);
+		gidList.add(184186);
+		gidList.add(184187);
+		gidList.add(184187);
+		gidList.add(184188);
+		gidList.add(184188);
+		gidList.add(184190);
+		gidList.add(184190);
+		gidList.add(184191);
+		gidList.add(184191);
+		gidList.add(329464);
+		gidList.add(329547);
+		gidList.add(329855);
+		gidList.add(331712);
+		gidList.add(331713);
+		gidList.add(331878);
+		gidList.add(331879);
+		gidList.add(331896);
+		gidList.add(331910);
+		gidList.add(331913);
+		gidList.add(331914);
+		gidList.add(8469);
+		gidList.add(8473);
+		gidList.add(8475);
+		gidList.add(8478);
+		gidList.add(8479);
+		gidList.add(8480);
+		gidList.add(8481);
+		gidList.add(8482);
+		gidList.add(8550);
+		gidList.add(8558);
+		gidList.add(8598);
+		gidList.add(8599);
+		gidList.add(8601);
+		gidList.add(8610);
+		gidList.add(8611);
+		gidList.add(8613);
+		gidList.add(8615);
+		gidList.add(8616);
+		gidList.add(8618);
+		gidList.add(8752);		
 	}
+	
 }

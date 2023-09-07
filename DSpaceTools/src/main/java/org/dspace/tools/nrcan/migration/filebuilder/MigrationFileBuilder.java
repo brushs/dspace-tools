@@ -57,6 +57,8 @@ public final class MigrationFileBuilder {
 			processor = new GEOScanCleanupProcessor(mapPath, inPath, outPath, cmd);
 		} else if (!StringUtils.isEmpty(type) && type.contentEquals("rel")) {
 			processor = new GEOScanRelationshipCleanupProcessor(mapPath, relPath, placePath, inPath, outPath, cmd);
+		} else if (!StringUtils.isEmpty(type) && type.contentEquals("fil")) {
+			processor = new GEOScanFilteredFileProcessor(inPath, outPath, cmd);
 		} else {
 			processor = new GEOScanFileProcessor(inPath, outPath, cmd);
 		}
