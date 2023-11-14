@@ -77,6 +77,10 @@ public class CFSItem {
 	
 	@Getter
 	@Setter
+	String editor_compiler;
+	
+	@Getter
+	@Setter
 	Availability availability;
 	
 	@Getter
@@ -90,6 +94,14 @@ public class CFSItem {
 	@Getter
 	@Setter
 	String cover;
+	
+	@Getter
+	@Setter
+	String meeting_date;
+	
+	@Getter
+	@Setter
+	String place;
 	
 	@Getter
 	@Setter

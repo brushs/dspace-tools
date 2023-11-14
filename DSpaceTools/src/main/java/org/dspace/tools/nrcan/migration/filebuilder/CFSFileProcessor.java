@@ -9,6 +9,8 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +53,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private PrintStream dspaceFileStream;
 	private PrintStream nrcanFileStream;
 	private PrintStream geospatialFileStream;
+	private PrintStream cfsidFileStream;
 	private Map<String, String> dcElementTemplates;
 	private Map<String, String> nrcanElementTemplates;
 	private Map<String, String> geospatialElementTemplates;
@@ -183,6 +186,8 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_JOURNAL_CFS = "journalCFS";
 	private static final String ELEMENT_IDENTIFIER_CFS = "identifierCFS";
 	private static final String ELEMENT_CFS = "cfs";
+	private static final String ELEMENT_EDITOR_COMPILER = "editor_compiler";
+	private static final String ELEMENT_MEETING_PLACE = "meeting_place";
 	
 	private static final String RELATIONSHIP_SERIAL = "isSerialOfPublication";
 	private static final String RELATIONSHIP_SEC_SERIAL = "isSecondarySerialOfPublication";
@@ -217,6 +222,7 @@ public class CFSFileProcessor implements FileProcessor {
 	
 	public void process() {
 		try {
+			cfsidFileStream = getPrintStream("C:\\dspace\\csfids");
 			File dir = new File(inPath);
 			File[] directoryListing = dir.listFiles();
 			if (directoryListing != null) {
@@ -235,7 +241,7 @@ public class CFSFileProcessor implements FileProcessor {
 					}
 				}
 			}
-			
+			cfsidFileStream.close();
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -316,9 +322,10 @@ public class CFSFileProcessor implements FileProcessor {
 
 		// ID
 		if (StringUtils.isEmpty(input.getUid())) {
-			throw new Exception("UUID should not be null");
+			throw new Exception("UID should not be null");
 		} else {
 			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_IDENTIFIER_CFS), input.getUid(), "cfsid", null);
+			cfsidFileStream.println(input.getUid());
 		}
 		
 		// Title
@@ -362,6 +369,21 @@ public class CFSFileProcessor implements FileProcessor {
 			for (AuthorData author : input.getAuthors().getData()) {
 				printRelationship(ELEMENT_AUTHOR_CFS, author.getUid());
 			}	
+		}
+		
+		// Editors
+		if (!StringUtils.isEmpty(input.getEditor_compiler())) {
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_EDITOR_COMPILER), input.getEditor_compiler(), null);	
+		}
+		
+		// Meeting Date
+		if (!StringUtils.isEmpty(input.getMeeting_date())) {
+			handleMeetingDate(input.getUid(), input.getMeeting_date(), input.getYear());	
+		}
+		
+		// Meeting Place
+		if (!StringUtils.isEmpty(input.getPlace())) {
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_MEETING_PLACE), input.getEditor_compiler(), null);	
 		}
 		
 		// Abstract
@@ -480,11 +502,15 @@ public class CFSFileProcessor implements FileProcessor {
 		*/
 	}
 	
-	private void printElement(PrintStream stream, String template, String value, String lang) {			
+	private void printElement(PrintStream stream, String template, String value, String lang) throws Exception {			
 		printElement(stream, template, value, null, lang);					
 	}
 	
-	private void printElement(PrintStream stream, String template, String value, String qualifier, String lang) {			
+	private void printElement(PrintStream stream, String template, String value, String qualifier, String lang) throws Exception {			
+		if (template == null) {
+			throw new Exception("Element not found");
+		}
+		
 		template = template.replace(VALUE, value);
 		
 		if (qualifier != null) {
@@ -595,6 +621,7 @@ public class CFSFileProcessor implements FileProcessor {
 		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDFROM, "<dcvalue element=\"relation\" qualifier=\"isreprintedfrom\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDIN, "<dcvalue element=\"relation\" qualifier=\"isreprintedin\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_RELATION_TBD, "<dcvalue element=\"relation\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_EDITOR_COMPILER, "<dcvalue element=\"contributor\" qualifier=\"editor\">" + VALUE + "</dcvalue>");
 		
 		nrcanElementTemplates = new HashMap<String, String>();
 		
@@ -665,6 +692,7 @@ public class CFSFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_DURATION, "<dcvalue element=\"legacy\" qualifier=\"duration\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_POLYGON_WENS, "<dcvalue element=\"legacy\" qualifier=\"bbox\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_CFS, "<dcvalue element=\"cfs\" qualifier=\"emailpdf\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_MEETING_PLACE, "<dcvalue element=\"meeting\" qualifier=\"place\">" + VALUE + "</dcvalue>");
 					
 		relationshipElements = new HashMap<String, Relationship>();
 		
@@ -734,6 +762,7 @@ public class CFSFileProcessor implements FileProcessor {
 			return false;
 		}
 
+		/*
 		if (input.getType().getData().getName().getEn().contentEquals("Journal Article") ||
 				input.getType().getData().getName().getEn().contentEquals("Series Item") ||
 				input.getType().getData().getName().getEn().contentEquals("Monographs")) {
@@ -741,6 +770,157 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 		
 		return false;
+		*/
+		return true;
+	}
+	
+	private void handleMeetingDate(String uid, String value, String year) throws Exception {
+		try {	
+			LocalDate startDate = null;
+			LocalDate endDate = null;
+			
+			DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMMM d uuuu");
+			DateTimeFormatter formatter2 = DateTimeFormatter.ofPattern("MMMM d, uuuu");
+			DateTimeFormatter formatter3 = DateTimeFormatter.ofPattern("d-MMM-uuuu");
+			DateTimeFormatter formatter4 = DateTimeFormatter.ofPattern("dd MMMM uuuu");
+			
+			value = value.trim();
+			
+			if (value.contains("-")) {
+				long spaceCount = value.chars().filter(ch -> ch == ' ').count();
+				value = value.replace(",", "");		
+				
+				
+				
+				if (spaceCount == 0) {
+					
+					// 17-Sep
+					try {
+						String endDateString = value + "-" + year;
+						endDate = LocalDate.parse(endDateString, formatter3);
+						startDate = LocalDate.parse(endDateString, formatter3);
+					
+					// 22-Nov-94
+					} catch (Exception e) {
+						String yearString = value.substring(value.lastIndexOf("-") + 1);
+						if (Integer.parseInt(yearString) > 23) {
+							yearString = "19" + yearString;
+						} else {
+							yearString = "20" + yearString;
+						}
+						String endDateString = value.substring(0, value.lastIndexOf("-")) + "-" + yearString;
+						endDate = LocalDate.parse(endDateString, formatter3);
+						startDate = LocalDate.parse(endDateString, formatter3);
+					}
+					
+				}
+				
+				
+				else if (spaceCount == 1) {
+					
+					// May 16-19
+					try {
+						String endDateString = value.substring(value.indexOf("-") + 1);
+						endDateString = value.substring(0, value.indexOf(" ")) + " " + endDateString + " " + year;
+						endDate = LocalDate.parse(endDateString, formatter);
+						String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+						startDate = LocalDate.parse(startDateString, formatter);
+					
+					// 14-16 June
+					} catch (Exception e) {
+						String endDateString = value.substring(value.indexOf("-") + 1) + " " + year;
+						endDate = LocalDate.parse(endDateString, formatter4);
+						String startDateString = value.substring(0, value.indexOf("-")) + value.substring(value.indexOf(" ")) + " " + endDate.getYear();
+						startDate = LocalDate.parse(startDateString, formatter4);
+					}				
+				}
+				
+				
+				else if (spaceCount == 2) {
+					
+					// July 8-12, 2002
+					try {
+						String endDateString = value.substring(value.indexOf("-") + 1);
+						endDateString = value.substring(0, value.indexOf(" ")) + " " + endDateString;
+						endDate = LocalDate.parse(endDateString, formatter);
+						String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+						startDate = LocalDate.parse(startDateString, formatter);						
+					
+					} catch (Exception e) {
+						
+						// October 28-November 1
+						try {
+							String endDateString = value.substring(value.indexOf("-") + 1);
+							endDateString = endDateString + " " + year;
+							endDate = LocalDate.parse(endDateString, formatter);
+							String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+							startDate = LocalDate.parse(startDateString, formatter);
+						
+						// 23-27 September 1980
+						} catch (Exception f) {
+							String endDateString = value.substring(value.indexOf("-") + 1);
+							endDate = LocalDate.parse(endDateString, formatter4);
+							String startDateString = value.substring(0, value.indexOf("-")) + value.substring(value.indexOf(" "));
+							startDate = LocalDate.parse(startDateString, formatter4);
+						
+						}
+						
+					}
+									
+				//April 29-May 11, 1974
+				} else if (spaceCount == 3) {
+				
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
+					String startDateString = value.substring(0, value.indexOf("-")) + " " + endDate.getYear();
+					startDate = LocalDate.parse(startDateString, formatter);				
+					
+				// Dec 28, 2011-Jan 2, 2012
+				} else if (spaceCount == 4) {
+					
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1), formatter);
+					startDate = LocalDate.parse(value.substring(0, value.indexOf("-")), formatter);
+					
+					
+				// September 28 - October 1, 1987
+				} else if (spaceCount == 5) {
+					
+					endDate = LocalDate.parse(value.substring(value.indexOf("-") + 1).trim(), formatter);
+					String startDateString = value.substring(0, value.indexOf("-")).trim() + " " + endDate.getYear();
+					startDate = LocalDate.parse(startDateString, formatter);				
+								
+				} else {
+					throw new Exception("Unhandled date format: " + value);
+				}
+				
+			// May 19, 2020
+			} else if (value.contains(",")) {
+				startDate = LocalDate.parse(value, formatter2);
+				endDate = startDate;
+			
+			// 1970
+			} else {
+				String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
+				template = template.replace(VALUE, value);
+				nrcanFileStream.println(template);
+				
+				template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
+				template = template.replace(VALUE, value);
+				nrcanFileStream.println(template);
+				
+				return;
+			}
+			
+			String template = nrcanElementTemplates.get(ELEMENT_MEETING_START);
+			template = template.replace(VALUE, startDate.format(DateTimeFormatter.ISO_DATE));
+			nrcanFileStream.println(template);
+			
+			template = nrcanElementTemplates.get(ELEMENT_MEETING_END);
+			template = template.replace(VALUE, endDate.format(DateTimeFormatter.ISO_DATE));
+			nrcanFileStream.println(template);
+		
+		} catch (Exception e) {
+			System.out.println("CFS ID: " + uid + " - Meeting Date: " + value);
+		}
 	}
 	
 }
