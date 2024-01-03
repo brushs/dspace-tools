@@ -202,6 +202,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String RELATIONSHIP_DIVISION = "isDivisionOfPublication";
 	private static final String RELATIONSHIP_SPONSOR = "isSponsorOfPublication";
 	private static final String RELATIONSHIP_JOURNAL = "isJournalOfPublication";
+	private static final String RELATIONSHIP_LANGUAGE = "isLanguageOfPublication";
 	
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
@@ -214,6 +215,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_CFS_MIGRATION_ID = "nrcan.author.cfsmigrationid";
 	private static final String ATTRIBUTE_JOURNAL_MIGRATION_ID = "nrcan.journal.migrationid";
+	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.isocode";
 	
 	public CFSFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -402,11 +404,19 @@ public class CFSFileProcessor implements FileProcessor {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F), input.getPls().getFr(), "fr");
 		}
 		
-		// Language
+		// Language   "English / French"
 		if (input.getLanguage().getEn().contentEquals("French")) {
-			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_LANGUAGE), "fr", null);
+			printRelationship(ELEMENT_LANGUAGE, "fr");
+		} else if (input.getLanguage().getEn().contentEquals("English")) {
+			printRelationship(ELEMENT_LANGUAGE, "en");
+		} else if (input.getLanguage().getEn().contentEquals("English / French")) {
+			printRelationship(ELEMENT_LANGUAGE, "en");
+			printRelationship(ELEMENT_LANGUAGE, "fr");
+		} else if (input.getLanguage().getEn().contentEquals("French / English")) {
+			printRelationship(ELEMENT_LANGUAGE, "en");
+			printRelationship(ELEMENT_LANGUAGE, "fr");
 		} else {
-			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_LANGUAGE), "en", null);
+			System.out.println("Unknown Language: " + input.getUid() + ": " + input.getLanguage().getEn());
 		}
 		
 		// DOI
@@ -443,6 +453,11 @@ public class CFSFileProcessor implements FileProcessor {
 		// Journal
 		if (!StringUtils.isEmpty(input.getPublication_name())) {
 			printRelationship(ELEMENT_JOURNAL_CFS, input.getPublication_name());	
+		}
+		
+		// Pagination
+		if (!StringUtils.isEmpty(input.getPage_first())) {
+			printRelationship(ELEMENT_PAGE_RANGE, input.getPage_first() + "-" + input.getPage_last());	
 		}
 		
 		// Subjects
@@ -593,7 +608,7 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		dcElementTemplates.put(ELEMENT_TITLE_A, "<dcvalue element=\"title\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_IDENTIFIER, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
-		dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		//dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_E, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_ABSTRACT, "<dcvalue element=\"description\" qualifier=\"abstract\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
@@ -714,6 +729,7 @@ public class CFSFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_REPORT_SERIAL_CODE, new Relationship(RELATIONSHIP_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
 		relationshipElements.put(ELEMENT_JOURNAL_CFS, new Relationship(RELATIONSHIP_JOURNAL, ATTRIBUTE_JOURNAL_MIGRATION_ID));
+		relationshipElements.put(ELEMENT_LANGUAGE, new Relationship(RELATIONSHIP_LANGUAGE, ATTRIBUTE_LANGUAGE_CODE));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
 		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");

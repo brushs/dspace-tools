@@ -214,6 +214,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String RELATIONSHIP_AREA = "isAreaOfPublication";
 	private static final String RELATIONSHIP_DIVISION = "isDivisionOfPublication";
 	private static final String RELATIONSHIP_SPONSOR = "isSponsorOfPublication";
+	private static final String RELATIONSHIP_LANGUAGE = "isLanguageOfPublication";
 	
 	private static final String ATTRIBUTE_TITLE = "dc.title";
 	private static final String ATTRIBUTE_MIGRATION_ID = "nrcan.author.migrationid";
@@ -226,6 +227,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_JOURNAL_CODE = "nrcan.journal.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_COUNTRY_CODE = "nrcan.country.code";
+	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.isocode";
 	
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -491,9 +493,6 @@ public class GEOScanFileProcessor implements FileProcessor {
 			case ELEMENT_TOTAL_PAGES :
 				value = getElementGeneric(line);
 				break;	
-			case ELEMENT_LANGUAGE :
-				value = getElementLanguage(line);
-				break;
 			case ELEMENT_FILE_TYPE :
 				value = getElementGeneric(line);
 				break;
@@ -850,6 +849,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				element = ELEMENT_AUTHOR_A;
 			}
 			break;
+		case ELEMENT_LANGUAGE :
+			value = getElementLanguage(line);
+			break;
 		case ELEMENT_COUNTRY :
 			value = getElementGeneric(line);
 			if (existingCountryCodes.contains(value)) {
@@ -1013,7 +1015,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		
 		dcElementTemplates.put(ELEMENT_TITLE_A, "<dcvalue element=\"title\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_IDENTIFIER, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
-		dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"\">" + VALUE + "</dcvalue>");
+		//dcElementTemplates.put(ELEMENT_LANGUAGE, "<dcvalue element=\"language\" qualifier=\"iso\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_E, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F, "<dcvalue element=\"description\" qualifier=\"\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_ABSTRACT, "<dcvalue element=\"description\" qualifier=\"abstract\" language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
@@ -1095,11 +1097,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 		nrcanElementTemplates.put(ELEMENT_IS_OR_HAS_MAP, "<dcvalue element=\"legacy\" qualifier=\"isorhasmap\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_CONTAINS_MAP, "<dcvalue element=\"legacy\" qualifier=\"map\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_REPORT_NUMBER, "<dcvalue element=\"reportnumber\" qualifier=\"\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER1, "<dcvalue element=\"secserial\" qualifier=\"0number\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER2, "<dcvalue element=\"secserial\" qualifier=\"1number\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER3, "<dcvalue element=\"secserial\" qualifier=\"2number\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER4, "<dcvalue element=\"secserial\" qualifier=\"3number\">" + VALUE + "</dcvalue>");
-		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER5, "<dcvalue element=\"secserial\" qualifier=\"4number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER1, "<dcvalue element=\"secondaryserial\" qualifier=\"0number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER2, "<dcvalue element=\"secondaryserial\" qualifier=\"1number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER3, "<dcvalue element=\"secondaryserial\" qualifier=\"2number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER4, "<dcvalue element=\"secondaryserial\" qualifier=\"3number\">" + VALUE + "</dcvalue>");
+		nrcanElementTemplates.put(ELEMENT_SEC_SERIAL_NUMBER5, "<dcvalue element=\"secondaryserial\" qualifier=\"4number\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_DATE_RECORD_SENT, "<dcvalue element=\"legacy\" qualifier=\"daterecordsent\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_RECORD_MODIFIED, "<dcvalue element=\"legacy\" qualifier=\"daterecordmod\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_PREVIOUS_FILENAME, "<dcvalue element=\"legacy\" qualifier=\"previousfilename\">" + VALUE + "</dcvalue>");
@@ -1127,6 +1129,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 		relationshipElements.put(ELEMENT_DIVISION, new Relationship(RELATIONSHIP_DIVISION, ATTRIBUTE_DIVISION_CODE));
 		relationshipElements.put(ELEMENT_FUNDING, new Relationship(RELATIONSHIP_SPONSOR, ATTRIBUTE_SPONSOR_CODE));
 		relationshipElements.put(ELEMENT_SEC_SERIAL_CODE, new Relationship(RELATIONSHIP_SEC_SERIAL, ATTRIBUTE_SERIAL_CODE));
+		relationshipElements.put(ELEMENT_LANGUAGE, new Relationship(RELATIONSHIP_LANGUAGE, ATTRIBUTE_LANGUAGE_CODE));
 		
 		geospatialElementTemplates = new HashMap<String, String>();
 		geospatialElementTemplates.put(ELEMENT_POLYGON_DEG, "<dcvalue element=\"polygon\" qualifier=\"degrees\">" + VALUE + "</dcvalue>");
@@ -1254,6 +1257,34 @@ public class GEOScanFileProcessor implements FileProcessor {
 			line = "en";
 		} else if (line.contentEquals("fre")) {
 			line = "fr";
+		} else if (line.contentEquals("iku")) {
+			line = "iu";
+		} else if (line.contentEquals("chp")) {
+			line = "cp";
+		} else if (line.contentEquals("ger")) {
+			line = "de";
+		} else if (line.contentEquals("rus")) {
+			line = "ru";
+		} else if (line.contentEquals("spa")) {
+			line = "es";
+		} else if (line.contentEquals("ita")) {
+			line = "it";
+		} else if (line.contentEquals("afr")) {
+			line = "af";
+		} else if (line.contentEquals("pol")) {
+			line = "pl";
+		} else if (line.contentEquals("nor")) {
+			line = "no";
+		} else if (line.contentEquals("chi")) {
+			line = "zh";
+		} else if (line.contentEquals("jpn")) {
+			line = "ja";
+		} else if (line.contentEquals("por")) {
+			line = "pt";
+		} else if (line.contentEquals("dut")) {
+			line = "nl";
+		} else {
+			System.out.println("Unknown Language: " + line);
 		}
 		return line;
 	}
