@@ -22,6 +22,7 @@ public final class MigrationFileBuilder {
 	private final static char OPT_INPUT_FOLDER = 'd';
 	private final static char OPT_OUTPUT_FILE = 'o';
 	private final static char OPT_TYPE = 't';
+	private final static char OPT_INPUT_CFSID_FILE = 'c';
 	
 	public static final void main(String[] args) {
 		CommandLineParser parser = new PosixParser();
@@ -49,10 +50,11 @@ public final class MigrationFileBuilder {
 		String inFolderPath = cmd.getOptionValue(OPT_INPUT_FOLDER);
 		String outPath = cmd.getOptionValue(OPT_OUTPUT_FILE);
 		String type = cmd.getOptionValue(OPT_TYPE);
-
+		String inCFSIDPath = cmd.getOptionValue(OPT_INPUT_CFSID_FILE);
+		
 		FileProcessor processor;
 		if (!StringUtils.isEmpty(type) && type.contentEquals("cfs")) {
-			processor = new CFSFileProcessor(inFolderPath, outPath, cmd);
+			processor = new CFSFileProcessor(inFolderPath, outPath, inCFSIDPath, cmd);
 		} else if (!StringUtils.isEmpty(type) && type.contentEquals("map")) {
 			processor = new GEOScanCleanupProcessor(mapPath, inPath, outPath, cmd);
 		} else if (!StringUtils.isEmpty(type) && type.contentEquals("rel")) {
@@ -122,6 +124,13 @@ public final class MigrationFileBuilder {
 				.withDescription("Type of migration (default, STDOUT)")
 				.hasArg()
 				.create(OPT_TYPE));
+		
+		options.addOption(
+				OptionBuilder.withLongOpt("cfsids")
+				.withArgName("FILE")
+				.withDescription("CFSID File")
+				.hasArg()
+				.create(OPT_INPUT_CFSID_FILE));
 
 		return options;
 	}

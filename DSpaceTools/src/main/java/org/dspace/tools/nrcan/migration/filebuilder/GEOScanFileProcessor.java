@@ -25,6 +25,7 @@ import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
@@ -57,6 +58,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> unknownElements = new HashSet<String>();
 	private Set<String> ignoredElements = new HashSet<String>();
 	private Set<String> valueSet = new HashSet<String>();
+	private Set<String> statusSet = new HashSet<String>();
 	private boolean firstDateSubmitted = true;
 	private String dateIssued = "";
 	private String lastDateUpdated = "";
@@ -64,6 +66,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private int secSerialCount;
 	private int uniqueSecSerialCount;
 	private int secSerialNumberCount;
+	private int completeCount = 0;
 	private String geoScanId;
 	private Set<String> existingFundingCodes = new HashSet<String>();
 	private Set<String> existingProvinceCodes = new HashSet<String>();
@@ -76,7 +79,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private Set<String> existingCorpAuthorCodes = new HashSet<String>();
 	private Set<String> existingPublisherCodes = new HashSet<String>();
 	private Set<String> existingAreaCodes = new HashSet<String>();
+	private Set<String> existingLanguageCodes = new HashSet<String>();
 	private List<String> bBoxes = new ArrayList<String>();
+	private boolean itemComplete = false;
+	private PrintStream cfsidFileStream;
+	private int authorCount = 0;
+	private int monoAuthorCount = 0;
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -227,7 +235,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_JOURNAL_CODE = "nrcan.journal.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_COUNTRY_CODE = "nrcan.country.code";
-	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.isocode";
+	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.iso";
 	
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -237,6 +245,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 	public void process() {
 		try {
 			initializeElementTemplates();
+			
+			cfsidFileStream = getPrintStream("C:\\dspace\\gids");
 			
 			inputStream = new FileInputStream(inPath);
 			streamReader = new BufferedReader(new InputStreamReader(inputStream));
@@ -282,12 +292,18 @@ public class GEOScanFileProcessor implements FileProcessor {
 				System.out.println("UNKNOWN ELEMENT: " + element);
 			}
 			
+			for (String element : statusSet) {
+				System.out.println("STATUS: " + element);
+			}
+
+			System.out.println("COMPLETE COUNT: " + completeCount);
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
 			throw new RuntimeException(ex.getMessage(), ex);
 		}
 		finally {
+			cfsidFileStream.close();
 			close();
 		}		
 	}
@@ -349,7 +365,12 @@ public class GEOScanFileProcessor implements FileProcessor {
 				existingCorpAuthorCodes = new HashSet<String>();
 				existingPublisherCodes = new HashSet<String>();
 				existingAreaCodes = new HashSet<String>();
+				existingLanguageCodes = new HashSet<String>();
 				bBoxes = new ArrayList<String>();
+				itemComplete = false;
+				authorCount = 0;
+				monoAuthorCount = 0;
+				
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 					currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
@@ -374,11 +395,17 @@ public class GEOScanFileProcessor implements FileProcessor {
 				closeOutputFiles();
 				filesOpen = false;
 				
+				if (!itemComplete) {
+					FileUtils.deleteDirectory(new File(outPath + "\\" + currentArchivePath + "\\" + currentItemPath));
+				}
+				
 				if (itemCount == archiveSize) {
 					String directory = outPath + "\\" + currentArchivePath + "\\";
 					String filename = outPath + "\\" + "archive_" + String.format("%03d" , archiveCount -1) + ".zip";
 					ZipDirectory.zipDirectory(directory, filename);			
 				}
+				
+				cfsidFileStream.println(geoScanId + ", " + authorCount + "," + monoAuthorCount);
 				
 				return;
 			}
@@ -461,6 +488,13 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_STATUS :
 				value = getElementGeneric(line);
+				statusSet.add(value);
+				if (value.toUpperCase().contentEquals("COMPLETE")) {
+					completeCount++;
+					itemComplete = true;
+				} else {
+					//cfsidFileStream.println(value);
+				}
 				break;
 			case ELEMENT_DATE_RECORD_SENT :
 				value = getElementDateRecordTouched(line);
@@ -479,6 +513,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 				qualifier = getElementIdentifierQualifier(line).toLowerCase();
 				if (line.contains("GID")) {
 					geoScanId = value;
+					if (geoScanId.contentEquals("289560")) {
+						geoScanId = value;
+					}
 				}
 				break;
 			case ELEMENT_CONTRIBUTOR :
@@ -835,6 +872,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			} else {
 				existingAuthorACodes.add(value);
+				authorCount++;
 			}
 			break;
 		case ELEMENT_AUTHOR_M :
@@ -844,13 +882,20 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			} else {
 				existingAuthorCodes.add(value);
+				monoAuthorCount++;
 			}
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_AUTHOR_A;
+				authorCount++;
 			}
 			break;
 		case ELEMENT_LANGUAGE :
 			value = getElementLanguage(line);
+			if (existingLanguageCodes.contains(value)) {
+				return;
+			} else {
+				existingLanguageCodes.add(value);
+			}
 			break;
 		case ELEMENT_COUNTRY :
 			value = getElementGeneric(line);
@@ -943,9 +988,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			//
 		};
 		
-		if (element.contentEquals(ELEMENT_AUTHOR_A)) {
-			return;
-		}
+//		if (element.contentEquals(ELEMENT_AUTHOR_A)) {
+//			return;
+//		}
 		
 		Relationship rel = relationshipElements.get(element);
 		
@@ -1283,7 +1328,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 			line = "pt";
 		} else if (line.contentEquals("dut")) {
 			line = "nl";
-		} else {
+		} else if (line.contentEquals("per")) {
+			line = "fa";
+		}  else {
 			System.out.println("Unknown Language: " + line);
 		}
 		return line;

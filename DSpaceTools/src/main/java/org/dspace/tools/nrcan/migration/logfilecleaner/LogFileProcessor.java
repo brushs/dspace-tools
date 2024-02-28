@@ -46,7 +46,8 @@ public class LogFileProcessor implements FileProcessor {
 	public void processLine(String input) {
 		boolean success = true;
 		
-		success &=  input.contains("MIG_ERR");
+		//success &=  input.contains("MIG_ERR");
+		success &=  input.contains(".author");
 
 		if(success) {
 			outputStream.println(input.substring(input.indexOf("@")+2));

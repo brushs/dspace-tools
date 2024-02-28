@@ -2,9 +2,11 @@ package org.dspace.tools.nrcan.migration.filebuilder;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
@@ -22,6 +24,7 @@ import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.dspace.tools.nrcan.FileProcessor;
 import org.dspace.tools.nrcan.migration.filebuilder.model.AuthorData;
@@ -41,6 +44,9 @@ public class CFSFileProcessor implements FileProcessor {
 
 	private String inPath;
 	private String outPath;
+	private FileInputStream inputStream;
+	private BufferedReader streamReader;
+	private String cfsidInPath;
 	private int itemCount = 0;
 	private int archiveCount = 0;
 	private int archiveSize = 100;
@@ -54,12 +60,15 @@ public class CFSFileProcessor implements FileProcessor {
 	private PrintStream nrcanFileStream;
 	private PrintStream geospatialFileStream;
 	private PrintStream cfsidFileStream;
+	private PrintStream cfsidsSkippedFileStream;
 	private Map<String, String> dcElementTemplates;
 	private Map<String, String> nrcanElementTemplates;
 	private Map<String, String> geospatialElementTemplates;
 	private Map<String, Relationship> relationshipElements;
 	private Set<String> ignoredElements = new HashSet<String>();
 	private Set<String> valueSet = new HashSet<String>();
+	private Set<String> cfsids = new HashSet<String>();
+	private Set<String> processedCFSIDs = new HashSet<String>();
 	
 	private final LanguageDetector detector = LanguageDetectorBuilder.fromLanguages(ENGLISH, FRENCH).build();
 	
@@ -130,6 +139,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ELEMENT_SUBJECT_OTHER = "dc:subjectother";
 	private static final String ELEMENT_SUBJECT_GC = "dc:subjectgoc";
 	private static final String ELEMENT_SUBJECT_BROAD = "dc:subjectbroad";
+	private static final String ELEMENT_SUBJECT_CFS = "dc:subjectcfs";
 	private static final String ELEMENT_RECORD_MODIFIED = "daterecordmod";
 	private static final String ELEMENT_CONT_DESCR = "contdescr";
 	private static final String ELEMENT_DOWNLOAD = "download";
@@ -217,14 +227,30 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_JOURNAL_MIGRATION_ID = "nrcan.journal.migrationid";
 	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.isocode";
 	
-	public CFSFileProcessor(String inPath, String outPath, CommandLine cmd) {
+	public CFSFileProcessor(String inPath, String outPath, String cfsidInPath, CommandLine cmd) {
 		this.inPath = inPath;
 		this.outPath = outPath;
+		this.cfsidInPath = cfsidInPath;
 	}
 	
 	public void process() {
 		try {
+			initCFSIDs();
 			cfsidFileStream = getPrintStream("C:\\dspace\\csfids");
+			cfsidsSkippedFileStream = getPrintStream("C:\\dspace\\csfidsskipped");
+			
+			if (StringUtils.isNotEmpty(cfsidInPath)) {
+				inputStream = new FileInputStream(cfsidInPath);
+				streamReader = new BufferedReader(new InputStreamReader(inputStream));
+			
+				String line = streamReader.readLine();
+				
+				while(StringUtils.isNotEmpty(line)) {
+					processedCFSIDs.add(line);
+					line = streamReader.readLine();
+				}
+			}
+			
 			File dir = new File(inPath);
 			File[] directoryListing = dir.listFiles();
 			if (directoryListing != null) {
@@ -244,6 +270,7 @@ public class CFSFileProcessor implements FileProcessor {
 				}
 			}
 			cfsidFileStream.close();
+			cfsidsSkippedFileStream.close();
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -291,7 +318,12 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 	
 	public void processItem(CFSItem input) throws Exception {
-		try {					
+		try {
+			if (!processCFSID(input)) {
+				cfsidsSkippedFileStream.println(input.getUid());
+				return;
+			}
+			
 			if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
 				currentArchivePath = "archive_" + String.format("%03d" , archiveCount++);
 				itemCount = 0;
@@ -320,13 +352,21 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 	}
 
+	private boolean processCFSID(CFSItem input) {
+		if (processedCFSIDs.contains(input.getUid())) {
+			return false;
+		}
+		
+		return true;
+	}
+	
 	private void processMetadata(CFSItem input) throws Exception {
 
 		// ID
 		if (StringUtils.isEmpty(input.getUid())) {
 			throw new Exception("UID should not be null");
 		} else {
-			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_IDENTIFIER_CFS), input.getUid(), "cfsid", null);
+			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER_CFS), input.getUid(), "cfsid", null);
 			cfsidFileStream.println(input.getUid());
 		}
 		
@@ -345,6 +385,8 @@ public class CFSFileProcessor implements FileProcessor {
 		// Content
 		if (input.getAvailability().getPdf_download().contentEquals("1")) {
 			processContent(input.getUid());
+			//cfsidFileStream.println(input.getUid());
+			
 		}
 		
 		// Email download
@@ -404,20 +446,79 @@ public class CFSFileProcessor implements FileProcessor {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F), input.getPls().getFr(), "fr");
 		}
 		
+		int langCount = 0;
 		// Language   "English / French"
-		if (input.getLanguage().getEn().contentEquals("French")) {
-			printRelationship(ELEMENT_LANGUAGE, "fr");
-		} else if (input.getLanguage().getEn().contentEquals("English")) {
+		if (input.getLanguage().getEn().contains("English")) {
 			printRelationship(ELEMENT_LANGUAGE, "en");
-		} else if (input.getLanguage().getEn().contentEquals("English / French")) {
-			printRelationship(ELEMENT_LANGUAGE, "en");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", en");
+			}
+		} 
+		if (input.getLanguage().getEn().contains("French")) {
 			printRelationship(ELEMENT_LANGUAGE, "fr");
-		} else if (input.getLanguage().getEn().contentEquals("French / English")) {
-			printRelationship(ELEMENT_LANGUAGE, "en");
-			printRelationship(ELEMENT_LANGUAGE, "fr");
-		} else {
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", fr");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Spanish")) {
+			printRelationship(ELEMENT_LANGUAGE, "es");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", es");
+			}
+		}
+		if (input.getLanguage().getEn().contains("German")) {
+			printRelationship(ELEMENT_LANGUAGE, "de");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", de");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Russian")) {
+			printRelationship(ELEMENT_LANGUAGE, "ru");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", run");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Finnish")) {
+			printRelationship(ELEMENT_LANGUAGE, "fi");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", fi");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Italian")) {
+			printRelationship(ELEMENT_LANGUAGE, "it");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", it");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Cree")) {
+			printRelationship(ELEMENT_LANGUAGE, "cr");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", cr");
+			}
+		}
+		if (input.getLanguage().getEn().contains("Ojibway")) {
+			printRelationship(ELEMENT_LANGUAGE, "oj");
+			langCount++;
+			if (cfsids.contains(input.getUid())) {
+				//cfsidFileStream.println(input.getUid() + ", oj");
+			}
+		}
+		
+		if (langCount == 0) {
 			System.out.println("Unknown Language: " + input.getUid() + ": " + input.getLanguage().getEn());
 		}
+		
+		// Write to file
+		//System.out.println("Lang Compare: " + input.getUid() + ": " + (langCount == 0 ? 1 : langCount));
+		//cfsidFileStream.println(input.getUid() + ": " + (langCount == 0 ? 1 : langCount));
 		
 		// DOI
 		if (!StringUtils.isEmpty(input.getDoi())) {
@@ -457,14 +558,15 @@ public class CFSFileProcessor implements FileProcessor {
 		
 		// Pagination
 		if (!StringUtils.isEmpty(input.getPage_first())) {
-			printRelationship(ELEMENT_PAGE_RANGE, input.getPage_first() + "-" + input.getPage_last());	
+			//printElement(ELEMENT_PAGE_RANGE, input.getPage_first() + (StringUtils.isNotEmpty(input.getPage_last()) ? "-" + input.getPage_last() : ""));	
+			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_PAGE_RANGE), input.getPage_first() + (StringUtils.isNotEmpty(input.getPage_last()) ? "-" + input.getPage_last() : ""), null);
 		}
 		
 		// Subjects
 		if (input.getSubjects() != null) {
 			for (SubjectData subject : input.getSubjects().getData()) {
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), replaceAmp(subject.getSubject().getEn()), "en");
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_BROAD), replaceAmp(subject.getSubject().getFr()), "fr");
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_CFS), replaceAmp(subject.getSubject().getEn()), "en");
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_CFS), replaceAmp(subject.getSubject().getFr()), "fr");
 			}
 		}
 		
@@ -488,14 +590,19 @@ public class CFSFileProcessor implements FileProcessor {
 		// Keywords
 		if (StringUtils.isNotEmpty(input.getKeywords())) {
 			String keywords = input.getKeywords().replace("\r\n", ", ");
+			keywords = keywords.replace("\r", ", ");
+			keywords = keywords.replace("\n", ", ");
+			keywords = keywords.replace("/", ",");
+			keywords = keywords.replace(";", ",");
 			List<String> keywordList = Arrays.asList(keywords.split(","));
 			String lang = "en";
 			for (String keyword : keywordList) {
-				Language detectedLanguage = detector.detectLanguageOf(input.getTitle());
-				if (detectedLanguage.equals(FRENCH)) {
-					lang = "fr";
-				}
-				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_OTHER), replaceAmp(keyword.trim()), lang);				
+				//Language detectedLanguage = detector.detectLanguageOf(input.getTitle());
+				//if (detectedLanguage.equals(FRENCH)) {
+				//	lang = "fr";
+				//}
+				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_SUBJECT_OTHER), replaceAmp(keyword.trim()), null);
+				//cfsidFileStream.println(input.getUid() + ", " + keyword);
 			}
 		}
 		
@@ -616,6 +723,7 @@ public class CFSFileProcessor implements FileProcessor {
 		dcElementTemplates.put(ELEMENT_SUBJECT_DESCRIPTOR, "<dcvalue element=\"subject\" qualifier=\"descriptor\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_GEOSCAN, "<dcvalue element=\"subject\" qualifier=\"geoscan\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_BROAD, "<dcvalue element=\"subject\" qualifier=\"broad\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_SUBJECT_CFS, "<dcvalue element=\"subject\" qualifier=\"broad\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_GC, "<dcvalue element=\"subject\" qualifier=\"gc\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_SUBJECT_OTHER, "<dcvalue element=\"subject\" qualifier=\"other\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_RECORD_CREATED, "<dcvalue element=\"description\" qualifier=\"provenance\"  language=\"" + "##LANG##" + "\">" + VALUE + "</dcvalue>");
@@ -637,10 +745,10 @@ public class CFSFileProcessor implements FileProcessor {
 		dcElementTemplates.put(ELEMENT_RELATION_ISREPRINTEDIN, "<dcvalue element=\"relation\" qualifier=\"isreprintedin\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_RELATION_TBD, "<dcvalue element=\"relation\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		dcElementTemplates.put(ELEMENT_EDITOR_COMPILER, "<dcvalue element=\"contributor\" qualifier=\"editor\">" + VALUE + "</dcvalue>");
+		dcElementTemplates.put(ELEMENT_IDENTIFIER_CFS, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
 		
 		nrcanElementTemplates = new HashMap<String, String>();
 		
-		nrcanElementTemplates.put(ELEMENT_IDENTIFIER_CFS, "<dcvalue element=\"identifier\" qualifier=\"" + "##QUAL##" + "\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_VOLUME, "<dcvalue element=\"volume\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_ISSUE, "<dcvalue element=\"issue\" qualifier=\"\">" + VALUE + "</dcvalue>");
 		nrcanElementTemplates.put(ELEMENT_OPEN_ACCESS, "<dcvalue element=\"openaccess\" qualifier=\"\">" + VALUE + "</dcvalue>");
@@ -939,4 +1047,124 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 	}
 	
+	private void initCFSIDs() {
+		cfsids.add("4650");
+		cfsids.add("4651");
+		cfsids.add("4653");
+		cfsids.add("6290");
+		cfsids.add("6299");
+		cfsids.add("9733");
+		cfsids.add("10037");
+		cfsids.add("10101");
+		cfsids.add("10170");
+		cfsids.add("10171");
+		cfsids.add("10203");
+		cfsids.add("10205");
+		cfsids.add("10263");
+		cfsids.add("10275");
+		cfsids.add("10312");
+		cfsids.add("10352");
+		cfsids.add("10483");
+		cfsids.add("10487");
+		cfsids.add("11302");
+		cfsids.add("14318");
+		cfsids.add("14560");
+		cfsids.add("14561");
+		cfsids.add("14822");
+		cfsids.add("16076");
+		cfsids.add("16334");
+		cfsids.add("16633");
+		cfsids.add("18111");
+		cfsids.add("18116");
+		cfsids.add("18120");
+		cfsids.add("18286");
+		cfsids.add("18287");
+		cfsids.add("18300");
+		cfsids.add("18303");
+		cfsids.add("18305");
+		cfsids.add("18306");
+		cfsids.add("18307");
+		cfsids.add("18318");
+		cfsids.add("18319");
+		cfsids.add("18324");
+		cfsids.add("18330");
+		cfsids.add("18340");
+		cfsids.add("18364");
+		cfsids.add("18389");
+		cfsids.add("18390");
+		cfsids.add("18391");
+		cfsids.add("18392");
+		cfsids.add("18393");
+		cfsids.add("18394");
+		cfsids.add("18395");
+		cfsids.add("18396");
+		cfsids.add("18397");
+		cfsids.add("18398");
+		cfsids.add("18399");
+		cfsids.add("18400");
+		cfsids.add("18420");
+		cfsids.add("18446");
+		cfsids.add("18454");
+		cfsids.add("18455");
+		cfsids.add("18456");
+		cfsids.add("18697");
+		cfsids.add("19785");
+		cfsids.add("19786");
+		cfsids.add("19824");
+		cfsids.add("20105");
+		cfsids.add("20119");
+		cfsids.add("20120");
+		cfsids.add("20399");
+		cfsids.add("20406");
+		cfsids.add("21379");
+		cfsids.add("21865");
+		cfsids.add("22858");
+		cfsids.add("22864");
+		cfsids.add("22949");
+		cfsids.add("23642");
+		cfsids.add("23651");
+		cfsids.add("23756");
+		cfsids.add("24190");
+		cfsids.add("24191");
+		cfsids.add("24203");
+		cfsids.add("24204");
+		cfsids.add("24205");
+		cfsids.add("24206");
+		cfsids.add("24207");
+		cfsids.add("24208");
+		cfsids.add("24211");
+		cfsids.add("24212");
+		cfsids.add("24405");
+		cfsids.add("25064");
+		cfsids.add("25875");
+		cfsids.add("25876");
+		cfsids.add("25997");
+		cfsids.add("26002");
+		cfsids.add("26591");
+		cfsids.add("28633");
+		cfsids.add("29030");
+		cfsids.add("30839");
+		cfsids.add("31753");
+		cfsids.add("31754");
+		cfsids.add("31755");
+		cfsids.add("32156");
+		cfsids.add("32221");
+		cfsids.add("32556");
+		cfsids.add("32864");
+		cfsids.add("35132");
+		cfsids.add("35155");
+		cfsids.add("35465");
+		cfsids.add("35466");
+		cfsids.add("35472");
+		cfsids.add("35488");
+		cfsids.add("35583");
+		cfsids.add("35719");
+		cfsids.add("36384");
+		cfsids.add("36558");
+		cfsids.add("37790");
+		cfsids.add("38340");
+		cfsids.add("39770");
+		cfsids.add("39955");
+		cfsids.add("40470");
+	}
 }
