@@ -30,6 +30,7 @@ import org.dspace.tools.nrcan.FileProcessor;
 import org.dspace.tools.nrcan.migration.filebuilder.model.AuthorData;
 import org.dspace.tools.nrcan.migration.filebuilder.model.CFSFile;
 import org.dspace.tools.nrcan.migration.filebuilder.model.CFSItem;
+import org.dspace.tools.nrcan.migration.filebuilder.model.OutputData;
 import org.dspace.tools.nrcan.migration.filebuilder.model.ProgramData;
 import org.dspace.tools.nrcan.migration.filebuilder.model.ProgramDetailData;
 import org.dspace.tools.nrcan.migration.filebuilder.model.SubjectData;
@@ -225,7 +226,7 @@ public class CFSFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
 	private static final String ATTRIBUTE_CFS_MIGRATION_ID = "nrcan.author.cfsmigrationid";
 	private static final String ATTRIBUTE_JOURNAL_MIGRATION_ID = "nrcan.journal.migrationid";
-	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.isocode";
+	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.iso";
 	
 	public CFSFileProcessor(String inPath, String outPath, String cfsidInPath, CommandLine cmd) {
 		this.inPath = inPath;
@@ -353,9 +354,9 @@ public class CFSFileProcessor implements FileProcessor {
 	}
 
 	private boolean processCFSID(CFSItem input) {
-		if (processedCFSIDs.contains(input.getUid())) {
-			return false;
-		}
+		//if (processedCFSIDs.contains(input.getUid())) {
+		//	return false;
+		//}
 		
 		return true;
 	}
@@ -367,7 +368,7 @@ public class CFSFileProcessor implements FileProcessor {
 			throw new Exception("UID should not be null");
 		} else {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_IDENTIFIER_CFS), input.getUid(), "cfsid", null);
-			cfsidFileStream.println(input.getUid());
+			//cfsidFileStream.println(input.getUid());
 		}
 		
 		// Title
@@ -380,13 +381,29 @@ public class CFSFileProcessor implements FileProcessor {
 			} else {
 				printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TITLE_A), input.getTitle(), "fr");
 			}	
-		}
+		}		
 		
 		// Content
 		if (input.getAvailability().getPdf_download().contentEquals("1")) {
 			processContent(input.getUid());
 			//cfsidFileStream.println(input.getUid());
 			
+		}
+		
+		// Citation
+		if (!StringUtils.isEmpty(input.getCitation_author())) {
+			//cfsidFileStream.println(input.getUid() + ",\"" + input.getCitation_author() + "\"");		
+		}
+		
+		// Outputs
+		if (input.getOutputs() != null && input.getOutputs().getData().length > 0) {
+			StringBuilder sb = new StringBuilder();
+			sb.append(input.getUid());
+			for (OutputData output : input.getOutputs().getData()) {
+				sb.append("\",\"" + output.getOutput().getEn());	
+				sb.append("\",\"" + output.getOutput().getFr());
+			}
+			//cfsidFileStream.println(sb.toString());
 		}
 		
 		// Email download
@@ -410,8 +427,10 @@ public class CFSFileProcessor implements FileProcessor {
 		if (input.getAuthors() == null) {
 			throw new Exception("Authors should not be null");
 		} else {
+			int i=0;
 			for (AuthorData author : input.getAuthors().getData()) {
 				printRelationship(ELEMENT_AUTHOR_CFS, author.getUid());
+				//cfsidFileStream.println(input.getUid() + ", " + i++ + ", " + author.getUid());
 			}	
 		}
 		
@@ -444,6 +463,7 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 		if (!StringUtils.isEmpty(input.getPls().getFr())) {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F), input.getPls().getFr(), "fr");
+			cfsidFileStream.println("\"" + replaceSingleQuote(input.getPls().getFr()) + "\"," + input.getUid());
 		}
 		
 		int langCount = 0;
@@ -451,65 +471,65 @@ public class CFSFileProcessor implements FileProcessor {
 		if (input.getLanguage().getEn().contains("English")) {
 			printRelationship(ELEMENT_LANGUAGE, "en");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", en");
-			}
+			//}
 		} 
 		if (input.getLanguage().getEn().contains("French")) {
 			printRelationship(ELEMENT_LANGUAGE, "fr");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", fr");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Spanish")) {
 			printRelationship(ELEMENT_LANGUAGE, "es");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", es");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("German")) {
 			printRelationship(ELEMENT_LANGUAGE, "de");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", de");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Russian")) {
 			printRelationship(ELEMENT_LANGUAGE, "ru");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", run");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Finnish")) {
 			printRelationship(ELEMENT_LANGUAGE, "fi");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", fi");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Italian")) {
 			printRelationship(ELEMENT_LANGUAGE, "it");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", it");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Cree")) {
 			printRelationship(ELEMENT_LANGUAGE, "cr");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", cr");
-			}
+			//}
 		}
 		if (input.getLanguage().getEn().contains("Ojibway")) {
 			printRelationship(ELEMENT_LANGUAGE, "oj");
 			langCount++;
-			if (cfsids.contains(input.getUid())) {
+			//if (cfsids.contains(input.getUid())) {
 				//cfsidFileStream.println(input.getUid() + ", oj");
-			}
+			//}
 		}
 		
 		if (langCount == 0) {
@@ -1045,6 +1065,11 @@ public class CFSFileProcessor implements FileProcessor {
 		} catch (Exception e) {
 			System.out.println("CFS ID: " + uid + " - Meeting Date: " + value);
 		}
+	}
+	
+	private String replaceSingleQuote(String value) {
+		value = value.replace("'", "''");
+		return value;
 	}
 	
 	private void initCFSIDs() {

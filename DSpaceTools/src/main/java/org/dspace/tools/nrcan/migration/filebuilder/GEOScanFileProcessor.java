@@ -37,6 +37,8 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private BufferedReader streamReader;
 	private String inPath;
 	private String outPath;
+	private FileInputStream gidInputStream;
+	private BufferedReader gidStreamReader;
 	private int itemCount = 0;
 	private int archiveCount = 0;
 	private int archiveSize = 100;
@@ -85,6 +87,14 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private PrintStream cfsidFileStream;
 	private int authorCount = 0;
 	private int monoAuthorCount = 0;
+	private int bitstreamCount = 0;
+	private int keptItemCount = 0;
+	private int position = 0;
+	private String bitstreamPath = "";
+	private boolean hasAsset = false;
+	private List<String> geoScanIdList = new ArrayList<String>();
+	private List<String> authors = new ArrayList<String>();
+	private boolean linebreak = false;
 	
 	private static final String VALUE = "##VALUE##";
 	private static final String LANGUAGE = "##LANG##";
@@ -234,7 +244,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private static final String ATTRIBUTE_SERIAL_CODE = "nrcan.serial.code";
 	private static final String ATTRIBUTE_JOURNAL_CODE = "nrcan.journal.code";
 	private static final String ATTRIBUTE_PROVINCE_CODE = "nrcan.province.code";
-	private static final String ATTRIBUTE_COUNTRY_CODE = "nrcan.country.code";
+	private static final String ATTRIBUTE_COUNTRY_CODE = "dc.identifier.iso";
 	private static final String ATTRIBUTE_LANGUAGE_CODE = "dc.identifier.iso";
 	
 	public GEOScanFileProcessor(String inPath, String outPath, CommandLine cmd) {
@@ -245,6 +255,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 	public void process() {
 		try {
 			initializeElementTemplates();
+			readGIDFile();
 			
 			cfsidFileStream = getPrintStream("C:\\dspace\\gids");
 			
@@ -261,7 +272,13 @@ public class GEOScanFileProcessor implements FileProcessor {
 				} else {
 					if (!nextLine.startsWith("<")) {
 						while (nextLine != null && !nextLine.startsWith("<")) {
-							line = line + nextLine;
+							if (StringUtils.isEmpty(nextLine)) {
+								line = line + "\\n";
+								linebreak = true;
+							} else {
+								line = line + nextLine;
+							}
+							
 							nextLine = streamReader.readLine();
 						}
 						if (nextLine != null && nextLine.startsWith("</") && !nextLine.startsWith("</item")) {
@@ -297,6 +314,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			}
 
 			System.out.println("COMPLETE COUNT: " + completeCount);
+			System.out.println("KEPT ITEM COUNT: " + keptItemCount);
 		}
 		catch(Exception ex) {
 			System.out.println(ex);
@@ -354,6 +372,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 				uniqueSecSerialCount = 0;
 				secSerialNumberCount = 0;
 				geoScanId= "";
+				hasAsset = false;
 				existingFundingCodes = new HashSet<String>();
 				existingProvinceCodes = new HashSet<String>();
 				existingDivisionCodes = new HashSet<String>();
@@ -369,7 +388,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 				bBoxes = new ArrayList<String>();
 				itemComplete = false;
 				authorCount = 0;
+				position = 0;
 				monoAuthorCount = 0;
+				bitstreamCount = 0;
+				authors = new ArrayList<String>();
+				linebreak = false;
 				
 				
 				if (itemCount == archiveSize || StringUtils.isEmpty(currentArchivePath)) {
@@ -395,9 +418,16 @@ public class GEOScanFileProcessor implements FileProcessor {
 				closeOutputFiles();
 				filesOpen = false;
 				
-				if (!itemComplete) {
-					FileUtils.deleteDirectory(new File(outPath + "\\" + currentArchivePath + "\\" + currentItemPath));
-				}
+				//if (!itemComplete || !geoScanId.startsWith("332") || !hasAsset) {
+//				if (!geoScanIdList.contains(geoScanId)) {
+//					FileUtils.deleteDirectory(new File(outPath + "\\" + currentArchivePath + "\\" + currentItemPath));
+//					for (String author : authors) {
+//						cfsidFileStream.println(author);
+//					}
+//				} else {
+//					cfsidFileStream.println(geoScanId);
+//					//cfsidFileStream.println("'" + geoScanId + "',");
+//				}
 				
 				if (itemCount == archiveSize) {
 					String directory = outPath + "\\" + currentArchivePath + "\\";
@@ -405,8 +435,15 @@ public class GEOScanFileProcessor implements FileProcessor {
 					ZipDirectory.zipDirectory(directory, filename);			
 				}
 				
-				cfsidFileStream.println(geoScanId + ", " + authorCount + "," + monoAuthorCount);
+//				if (geoScanId.equals("327388")) {
+//					cfsidFileStream.println(geoScanId + ", " + bitstreamPath);
+//				}
 				
+				//cfsidFileStream.println(geoScanId + ", " + authorCount + "," + monoAuthorCount);
+				//cfsidFileStream.println(geoScanId);
+//				if (geoScanIdList.contains(geoScanId)) {
+//					cfsidFileStream.println(geoScanId + ", " + bitstreamPath);
+//				}
 				return;
 			}
 			
@@ -465,13 +502,19 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_ABSTRACT :
 				value = getElementGeneric(line);
-				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
+//				if (linebreak) {
+//					cfsidFileStream.println("update metadatavalue set text_value = E'" + replaceSingleQuote(value) + "' where dspace_object_id = (select dspace_object_id from metadatavalue where metadata_field_id = 273 and text_value = '" + geoScanId + "') and metadata_field_id = 36 and text_lang = '" + language + "';");
+//				}			
+				value = replaceLTGT(value);
 				break;
 			case ELEMENT_SUMMARY :
 				value = getElementGeneric(line);
-				value = replaceLTGT(value);
 				language = getElementLanguageGeneric(line);
+//				if (linebreak) {
+//					cfsidFileStream.println("update metadatavalue set text_value = E'" + replaceSingleQuote(value) + "' where dspace_object_id = (select dspace_object_id from metadatavalue where metadata_field_id = 273 and text_value = '" + geoScanId + "') and metadata_field_id = 150 and text_lang = '" + language + "';");
+//				}			
+				value = replaceLTGT(value);
 				break;
 			case ELEMENT_VOLUME :
 				value = getElementGeneric(line);
@@ -545,13 +588,19 @@ public class GEOScanFileProcessor implements FileProcessor {
 				break;
 			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_E :
 				value = getElementGeneric(line);
-				value = replaceLTGT(value);
+				//value = replaceLTGT(value);
 				language = "en";
+				if (linebreak) {
+					cfsidFileStream.println("update metadatavalue set text_value = E'" + replaceSingleQuote(value) + "' where dspace_object_id = (select dspace_object_id from metadatavalue where metadata_field_id = 273 and text_value = '" + geoScanId + "') and metadata_field_id = 35 and text_lang = '" + language + "';");
+				}
 				break;
 			case ELEMENT_PLAIN_LANGUAGE_SUMMARY_F :
 				value = getElementGeneric(line);
-				value = replaceLTGT(value);
+				//value = replaceLTGT(value);
 				language = "fr";
+				if (linebreak) {
+					cfsidFileStream.println("update metadatavalue set text_value = E'" + replaceSingleQuote(value) + "' where dspace_object_id = (select dspace_object_id from metadatavalue where metadata_field_id = 273 and text_value = '" + geoScanId + "') and metadata_field_id = 35 and text_lang = '" + language + "';");
+				}	
 				break;
 			case ELEMENT_NOTES :
 				line = line.replace("\n", " - ").replace("\r", " - ");
@@ -830,6 +879,9 @@ public class GEOScanFileProcessor implements FileProcessor {
 		String output = "-r -s 0 -f " + value;
 		
 		contentsFileStream.println(output);
+		bitstreamCount++;
+		bitstreamPath = value;
+		hasAsset = true;
 	}
 	
 	private void processThumbnail(String element, String line) {
@@ -872,9 +924,11 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			} else {
 				existingAuthorACodes.add(value);
+				//authors.add(geoScanId + "," + authorCount + "," + value);
 				authorCount++;
+				return;
 			}
-			break;
+			//break;
 		case ELEMENT_AUTHOR_M :
 			value = getAuthorMigrationId(line);
 			if (existingAuthorCodes.contains(value)) {
@@ -882,13 +936,15 @@ public class GEOScanFileProcessor implements FileProcessor {
 				return;
 			} else {
 				existingAuthorCodes.add(value);
+				authors.add(geoScanId + "," + monoAuthorCount + "," + value);
 				monoAuthorCount++;
 			}
 			if (bibLevel.toLowerCase().contentEquals("m")) {
 				element = ELEMENT_AUTHOR_A;
+				//authors.add(geoScanId + "," + authorCount + "," + value);
 				authorCount++;
 			}
-			break;
+			return;
 		case ELEMENT_LANGUAGE :
 			value = getElementLanguage(line);
 			if (existingLanguageCodes.contains(value)) {
@@ -1510,7 +1566,7 @@ public class GEOScanFileProcessor implements FileProcessor {
 			} catch (Exception e) {
 				//
 			}
-			return lastName.toUpperCase() + "_" + firstName.toUpperCase() + "_" + deptId + "_" + orcId;
+			return lastName.toUpperCase().replace(",", "") + "_" + firstName.toUpperCase().replace(",", "") + "_" + deptId + "_" + orcId;
 		} catch (Exception e) {
 			return null;
 		}		
@@ -1703,6 +1759,16 @@ public class GEOScanFileProcessor implements FileProcessor {
 		return value;
 	}
 	
+	private String replaceQuote(String value) {
+		value = value.replace("\"", "\"\"");
+		return value;
+	}
+	
+	private String replaceSingleQuote(String value) {
+		value = value.replace("'", "''");
+		return value;
+	}
+	
 	private String replaceFundingLTGT(String value) {
 		value = value.replace("<", "");
 		value = value.replace(">", "");
@@ -1712,5 +1778,24 @@ public class GEOScanFileProcessor implements FileProcessor {
 	private String replaceAmp(String value) {
 		value = value.replace("&","&amp;");
 		return value;
+	}
+	
+	private void readGIDFile() throws IOException {
+		try {
+			gidInputStream = new FileInputStream("C:\\dspace\\missing_gids.txt");
+			gidStreamReader = new BufferedReader(new InputStreamReader(gidInputStream));
+			
+			String line = gidStreamReader.readLine();
+			
+			while(line != null) {
+				geoScanIdList.add(line.trim());
+				line = gidStreamReader.readLine();;
+			}
+			
+		} catch(Exception ex) {
+			System.out.println(ex);
+			throw new RuntimeException(ex.getMessage(), ex);
+		}
+
 	}
 }
