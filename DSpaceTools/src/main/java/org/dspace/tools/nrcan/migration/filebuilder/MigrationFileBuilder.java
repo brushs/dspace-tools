@@ -67,7 +67,9 @@ public final class MigrationFileBuilder {
 			processor = new LargeSqlProcessor(inPath, outPath, cmd);
 		} else if (!StringUtils.isEmpty(type) && type.contentEquals("pdb")) {
 			processor = new PhotoFileProcessor(inPath, outPath, cmd);
-		} else {
+		} else if (!StringUtils.isEmpty(type) && type.contentEquals("photo")) {
+			processor = new PhotoDBFileProcessor(inPath, outPath, cmd);
+		}  else {
 			processor = new GEOScanFileProcessor(inPath, outPath, cmd);
 		}
 		
