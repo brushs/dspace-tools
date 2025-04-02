@@ -151,4 +151,12 @@ public class CFSItem {
 	@Getter
 	@Setter
 	Outputs outputs;
+	
+	@Getter
+	@Setter
+	String catalog_id_alt_lang;
+	
+	@Getter
+	@Setter
+	String ostr_link_alt_lang;
 }

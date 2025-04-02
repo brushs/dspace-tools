@@ -463,7 +463,7 @@ public class CFSFileProcessor implements FileProcessor {
 		}
 		if (!StringUtils.isEmpty(input.getPls().getFr())) {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_PLAIN_LANGUAGE_SUMMARY_F), input.getPls().getFr(), "fr");
-			cfsidFileStream.println("\"" + replaceSingleQuote(input.getPls().getFr()) + "\"," + input.getUid());
+			//cfsidFileStream.println("\"" + replaceSingleQuote(input.getPls().getFr()) + "\"," + input.getUid());
 		}
 		
 		int langCount = 0;
@@ -564,7 +564,18 @@ public class CFSFileProcessor implements FileProcessor {
 		if (!StringUtils.isEmpty(input.getIssue())) {
 			printElement(nrcanFileStream, nrcanElementTemplates.get(ELEMENT_ISSUE), replaceAmp(input.getIssue()), null, null);
 		}
-				
+			
+		
+		// Issue
+//		if (!StringUtils.isEmpty(input.getCatalog_id_alt_lang())) {
+//			cfsidFileStream.println(input.getUid() + ", " + input.getCatalog_id_alt_lang());
+//		}
+		
+		// Email download
+		if (input.getAvailability().getPrint().contentEquals("1")) {
+			cfsidFileStream.println(input.getUid());
+		}	
+		
 		// Type
 		if (input.getType() != null) {
 			printElement(dublinCoreFileStream, dcElementTemplates.get(ELEMENT_TYPE), input.getType().getData().getName().getEn(), "en");
